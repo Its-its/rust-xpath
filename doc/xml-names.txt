@@ -1,0 +1,42 @@
+https://www.w3.org/TR/REC-xml-names/
+
+Attribute Names for Namespace Declaration
+[1]   	NSAttName				::= PrefixedAttName
+									| DefaultAttName
+[2]   	PrefixedAttName			::= 'xmlns:' NCName	[NSC: Reserved Prefixes and Namespace Names]
+[3]   	DefaultAttName			::= 'xmlns'
+[4]   	NCName					::= Name - (Char* ':' Char*)	/* An XML Name, minus the ":" */
+
+
+Qualified Name
+[7]   	QName					::= PrefixedName
+									| UnprefixedName
+[8]   	PrefixedName			::= Prefix ':' LocalPart
+[9]   	UnprefixedName			::= LocalPart
+[10]   	Prefix					::= NCName
+[11]   	LocalPart				::= NCName
+
+
+Element Names
+[12]   	STag					::= '<' QName (S Attribute)* S? '>' 	[NSC: Prefix Declared]
+[13]   	ETag					::= '</' QName S? '>'	[NSC: Prefix Declared]
+[14]   	EmptyElemTag			::= '<' QName (S Attribute)* S? '/>'	[NSC: Prefix Declared]
+
+
+Attribute
+[15]   	Attribute				::= NSAttName Eq AttValue
+									| QName Eq AttValue	[NSC: Prefix Declared]
+										[NSC: No Prefix Undeclaring]
+										[NSC: Attributes Unique]
+
+
+Qualified Names in Declarations
+[16]   	doctypedecl				::= '<!DOCTYPE' S QName (S ExternalID)? S? ('[' (markupdecl | PEReference | S)* ']' S?)? '>'
+[17]   	elementdecl				::= '<!ELEMENT' S QName S contentspec S? '>'
+[18]   	cp						::= (QName | choice | seq) ('?' | '*' | '+')?
+[19]   	Mixed					::= '(' S? '#PCDATA' (S? '|' S? QName)* S? ')*'
+									| '(' S? '#PCDATA' S? ')'
+[20]   	AttlistDecl				::= '<!ATTLIST' S QName AttDef* S? '>'
+[21]   	AttDef					::= S (QName | NSAttName) S AttType S DefaultDecl
+
+
