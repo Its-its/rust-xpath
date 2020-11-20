@@ -8,7 +8,7 @@ use markup5ever::{QualName, Namespace as Ns, LocalName};
 use crate::{Evaluation, Nodeset, Node as DomNode};
 
 pub trait NodeTest: fmt::Debug {
-    fn test<'c, 'd>(&self, context: &Evaluation, result: &mut Nodeset);
+    fn test(&self, context: &Evaluation, result: &mut Nodeset);
 }
 
 
@@ -87,7 +87,7 @@ impl Attribute {
 }
 
 impl NodeTest for Attribute {
-    fn test<'c, 'd>(&self, context: &Evaluation, result: &mut Nodeset) {
+    fn test(&self, context: &Evaluation, result: &mut Nodeset) {
         if context.node.is_attribute() {
             let attr = context.node.attribute();
 
@@ -128,17 +128,15 @@ pub struct Namespace {
 }
 
 impl Namespace {
-    pub fn new(name: NameTest) -> Namespace {
-        Namespace { name_test: name }
+    pub fn new(name_test: NameTest) -> Namespace {
+        Namespace { name_test }
     }
 }
 
 impl NodeTest for Namespace {
-    fn test<'c, 'd>(&self, context: &Evaluation, result: &mut Nodeset) {
-        if context.node.is_namespace() {
-            if self.name_test.is_match(context, &QualName::new(None, Ns::from(""), LocalName::from(context.node.prefix()))) {
-                result.add_node(context.node.clone());
-            }
+    fn test(&self, context: &Evaluation, result: &mut Nodeset) {
+        if context.node.is_namespace() && self.name_test.is_match(context, &QualName::new(None, Ns::from(""), LocalName::from(context.node.prefix()))) {
+            result.add_node(context.node.clone());
         }
     }
 }
@@ -149,17 +147,15 @@ pub struct Element {
 }
 
 impl Element {
-    pub fn new(name: NameTest) -> Element {
-        Element { name_test: name }
+    pub fn new(name_test: NameTest) -> Element {
+        Element { name_test }
     }
 }
 
 impl NodeTest for Element {
-    fn test<'c, 'd>(&self, context: &Evaluation, result: &mut Nodeset) {
-        if context.node.is_element() {
-            if self.name_test.is_match(context, &context.node.name()) {
-                result.add_node(context.node.clone());
-            }
+    fn test(&self, context: &Evaluation, result: &mut Nodeset) {
+        if context.node.is_element() && self.name_test.is_match(context, &context.node.name()) {
+            result.add_node(context.node.clone());
         }
     }
 }
@@ -169,7 +165,7 @@ impl NodeTest for Element {
 pub struct Node;
 
 impl NodeTest for Node {
-    fn test<'c, 'd>(&self, context: &Evaluation, result: &mut Nodeset) {
+    fn test(&self, context: &Evaluation, result: &mut Nodeset) {
         result.add_node(context.node.clone());
     }
 }
@@ -179,7 +175,7 @@ impl NodeTest for Node {
 pub struct Text;
 
 impl NodeTest for Text {
-    fn test<'c, 'd>(&self, context: &Evaluation, result: &mut Nodeset) {
+    fn test(&self, context: &Evaluation, result: &mut Nodeset) {
         if let DomNode::Text(_) = context.node {
             result.add_node(context.node.clone());
         }
@@ -191,7 +187,7 @@ impl NodeTest for Text {
 pub struct Comment;
 
 impl NodeTest for Comment {
-    fn test<'c, 'd>(&self, context: &Evaluation, result: &mut Nodeset) {
+    fn test(&self, context: &Evaluation, result: &mut Nodeset) {
         if let DomNode::Comment(_) = context.node {
             result.add_node(context.node.clone());
         }
@@ -210,7 +206,7 @@ impl ProcessingInstruction {
 }
 
 impl NodeTest for ProcessingInstruction {
-    fn test<'c, 'd>(&self, context: &Evaluation, result: &mut Nodeset) {
+    fn test(&self, context: &Evaluation, result: &mut Nodeset) {
         if context.node.is_processing_instruction() {
             match self.target {
                 Some(ref name) if name == &context.node.target() => result.add_node(context.node.clone()),

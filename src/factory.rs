@@ -1,13 +1,12 @@
 
 use std::iter::Peekable;
 
-use crate::{Tokenizer, Evaluation, Node, ExprToken, Operator, Error, Result, Value, NodeTest, NodeType, PrincipalNodeType, AxisName};
-use crate::expressions::{ExpressionArg, ContextNode, RootNode, Path, Step, Literal, Equal, NotEqual};
+use crate::{DEBUG, Tokenizer, Evaluation, Node, ExprToken, Operator, Error, Result, Value, NodeTest, NodeType, PrincipalNodeType, AxisName};
+use crate::expressions::{ExpressionArg, ContextNode, RootNode, Path, Step, Literal, Equal, NotEqual, Function};
 use crate::nodetest;
+use crate::functions;
 
 type ExpressionResult = Result<Option<ExpressionArg>>;
-
-pub static DEBUG: bool = false;
 
 #[derive(Clone)]
 pub struct Document {
@@ -43,14 +42,12 @@ macro_rules! return_value {
 
 		match step {
 			ExprToken::$token(v) => v,
-			s @ _ => return Err(Error::UnexpectedToken(s))
+			s => return Err(Error::UnexpectedToken(s))
 		}
 	}};
 }
 
 pub struct Factory<'a> {
-	document: &'a Document,
-
 	eval: Evaluation<'a>,
 	tokenizer: Tokenizer,
 	token_steps: Vec<ExprToken>,
@@ -60,7 +57,6 @@ pub struct Factory<'a> {
 impl<'a> Factory<'a> {
 	pub fn new<S: Into<String>>(query: S, document: &'a Document, node: Node) -> Self {
 		Factory {
-			document,
 			eval: Evaluation::new(node, document),
 			tokenizer: Tokenizer::new(query),
 			token_steps: Vec::new(),
@@ -70,7 +66,6 @@ impl<'a> Factory<'a> {
 
 	pub fn new_from_steps(steps: Vec<ExprToken>, document: &'a Document, node: Node) -> Self {
 		Factory {
-			document,
 			eval: Evaluation::new(node, document),
 			tokenizer: Tokenizer::new(""),
 			token_steps: steps,
@@ -144,7 +139,7 @@ impl<'a> Factory<'a> {
 
 			let mut stepper = Stepper::new(self.token_steps.clone().into_iter().peekable());
 
-			while stepper.has_more_tokens() {
+			if stepper.has_more_tokens() {
 				match self.parse_expression(&mut stepper) {
 					Ok(expr) => {
 						match expr {
@@ -156,14 +151,12 @@ impl<'a> Factory<'a> {
 							None => {
 								// Couldn't find it. Invalid xpath.
 								println!("Invalid XPATH");
-								break;
 							}
 						}
 					}
 
 					Err(e) => {
 						eprintln!("Error: {:?}", e);
-						break;
 					}
 				}
 			}
@@ -331,18 +324,8 @@ impl<'a> Factory<'a> {
                 None => Ok(Some(Box::new(RootNode))),
             }
         } else {
-            Ok(None)
+			Ok(None)
         }
-	}
-
-	// AbbreviatedAbsoluteLocationPath ::= '//' RelativeLocationPath
-	fn parse_abbreviated_absolute_location_path<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		if step.is_next_token(&Operator::DoubleForwardSlash.into()) {
-			println!("parse_abbreviated_absolute_location_path");
-			step.consume(&Operator::DoubleForwardSlash.into())?;
-		}
-
-		Ok(None)
 	}
 
 	// AbbreviatedRelativeLocationPath ::= RelativeLocationPath '//' Step
@@ -454,14 +437,54 @@ impl<'a> Factory<'a> {
 			return Ok(Some(Box::new(Literal::from(Value::Number(value)))));
 		}
 
-		// self.parse_function_call(step)
+
+		if let Some(func) = self.parse_function_call(step)? {
+			return Ok(Some(Box::new(Function::new(func))));
+		}
 
 		Ok(None)
 	}
 
 	// Function Calls
-	fn parse_function_call<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		Ok(None)
+	fn parse_function_call<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> Result<Option<Box<dyn functions::Function>>> {
+		if step.is_next_token_func(|i| i.is_function_name()) {
+			let fn_name = return_value!(step, ExprToken::FunctionName);
+			step.consume(&ExprToken::LeftParen)?;
+
+			match fn_name.as_str() {
+				"last" => {
+					step.consume(&ExprToken::RightParen)?;
+
+					Ok(Some(Box::new(functions::Last)))
+				}
+
+				"position" => {
+					step.consume(&ExprToken::RightParen)?;
+
+					Ok(Some(Box::new(functions::Position)))
+				}
+
+				"contains" => {
+					let expr = self.parse_expression(step)?;
+
+					step.consume(&ExprToken::Comma)?;
+
+					let value = return_value!(step, ExprToken::Literal);
+
+					step.consume(&ExprToken::RightParen)?;
+
+					if let Some(expr) = expr {
+						Ok(Some(Box::new(functions::Contains::new(expr, Value::String(value)))))
+					} else {
+						Ok(None)
+					}
+				}
+
+				_ => Ok(None)
+			}
+		} else {
+			Ok(None)
+		}
 	}
 
 	// Node Test
@@ -550,30 +573,26 @@ impl<'a> Factory<'a> {
 
 //
 
-pub struct Stepper<S: Iterator<Item = ExprToken>> where {
-	steps: Peekable<S>
-}
+pub struct Stepper<S: Iterator<Item = ExprToken>>(Peekable<S>);
 
 impl<S: Iterator<Item = ExprToken>> Stepper<S> {
 	pub fn new(steps: Peekable<S>) -> Self {
-		Stepper {
-			steps
-		}
+		Stepper(steps)
 	}
 
 	pub fn has_more_tokens(&mut self) -> bool {
-		self.steps.peek().is_some()
+		self.peek().is_some()
 	}
 
 	pub fn is_next_token(&mut self, token: &ExprToken) -> bool {
-		match self.steps.peek() {
+		match self.peek() {
 			Some(t) => t == token,
 			None => false
 		}
 	}
 
 	pub fn is_next_token_func<F: FnOnce(&S::Item) -> bool>(&mut self, token: F) -> bool {
-		match self.steps.peek() {
+		match self.peek() {
 			Some(t) => token(t),
 			None => false
 		}
@@ -590,32 +609,34 @@ impl<S: Iterator<Item = ExprToken>> Stepper<S> {
 	}
 
 	pub fn consume(&mut self, token: &ExprToken) -> Result<()> {
-		let step = self.steps.next().ok_or(Error::InputEmpty)?;
+		let step = self.next().ok_or(Error::InputEmpty)?;
 
 		if &step == token {
 			Ok(())
 		} else {
-			Err(Error::UnexpectedToken(step.clone()))
+			Err(Error::UnexpectedToken(step))
 		}
 	}
 
 	pub fn consume_func<F: FnOnce(&S::Item) -> bool>(&mut self, token: F) -> Result<()> {
-		let step = self.steps.next().ok_or(Error::InputEmpty)?;
+		let step = self.next().ok_or(Error::InputEmpty)?;
 
 		if token(&step) {
 			Ok(())
 		} else {
-			Err(Error::UnexpectedToken(step.clone()))
+			Err(Error::UnexpectedToken(step))
 		}
 	}
 
-	pub fn next(&mut self) -> Option<S::Item> {
-		self.steps.next()
-	}
-
 	pub fn peek(&mut self) -> Option<&S::Item> {
-		self.steps.peek()
+		self.0.peek()
 	}
 }
 
+impl<S: Iterator<Item = ExprToken>> Iterator for Stepper<S> {
+	type Item = S::Item;
 
+	fn next(&mut self) -> Option<Self::Item> {
+		self.0.next()
+	}
+}

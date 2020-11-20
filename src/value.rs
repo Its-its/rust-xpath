@@ -7,6 +7,7 @@ use markup5ever_rcdom::{NodeData, Handle as NodeHandle, WeakHandle as WeakNodeHa
 use html5ever::serialize;
 
 use crate::Document;
+use crate::result::{Result, ValueError};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -26,45 +27,72 @@ impl Value {
 		}
 	}
 
-	pub fn into_nodeset(self) -> Nodeset {
+	pub fn as_nodeset(&self) -> Result<&Nodeset> {
 		match self {
-			Value::Nodeset(s) =>  s,
-			_ => panic!("Value is NOT a Nodeset. Cannot convert into it.")
+			Value::Nodeset(s) =>  Ok(s),
+			_ => Err(ValueError::Nodeset.into())
 		}
 	}
 
-	pub fn into_iterset(self) -> NodeIterset {
+	pub fn into_nodeset(self) -> Result<Nodeset> {
 		match self {
-			Value::Nodeset(s) =>  NodeIterset::new(s.into_iter()),
-			_ => panic!("Value is NOT a Nodeset. Cannot convert into it.")
+			Value::Nodeset(s) =>  Ok(s),
+			_ => Err(ValueError::Nodeset.into())
 		}
 	}
 
-	pub fn vec_string(self) -> Vec<String> {
-		self.into_iterset()
-		.map(|i| i.value())
-		.map(|i| i.string())
-		.collect()
-	}
-
-	pub fn boolean(self) -> bool {
+	pub fn into_iterset(self) -> Result<NodeIterset> {
 		match self {
-			Value::Boolean(v) =>  v,
-			_ => panic!("Value is NOT a Boolean. Cannot convert into it.")
+			Value::Nodeset(s) =>  Ok(NodeIterset::new(s.into_iter())),
+			_ => Err(ValueError::Nodeset.into())
 		}
 	}
 
-	pub fn number(self) -> f64 {
+	pub fn vec_string(self) -> Result<Vec<String>> {
+		let result_iter: Vec<Result<String>> = self.into_iterset()?
+			.map(|i| i.value())
+			.map(|i| i.string())
+			.collect();
+
+		let result_len = result_iter.len();
+
+		let value_iter: Vec<String> = result_iter.into_iter()
+			.filter_map(|i| i.ok())
+			.collect();
+
+		if value_iter.len() != result_len {
+			return Err(ValueError::String.into());
+		}
+
+		Ok(value_iter)
+	}
+
+
+	pub fn boolean(&self) -> Result<bool> {
 		match self {
-			Value::Number(v) =>  v,
-			_ => panic!("Value is NOT a Number. Cannot convert into it.")
+			Value::Boolean(v) =>  Ok(*v),
+			_ => Err(ValueError::Boolean.into())
 		}
 	}
 
-	pub fn string(self) -> String {
+	pub fn number(&self) -> Result<f64> {
 		match self {
-			Value::String(v) =>  v,
-			_ => panic!("Value is NOT a String. Cannot convert into it.")
+			Value::Number(v) =>  Ok(*v),
+			_ => Err(ValueError::Number.into())
+		}
+	}
+
+	pub fn as_string(&self) -> Result<&String> {
+		match self {
+			Value::String(v) =>  Ok(v),
+			_ => Err(ValueError::String.into())
+		}
+	}
+
+	pub fn string(self) -> Result<String> {
+		match self {
+			Value::String(v) =>  Ok(v),
+			_ => Err(ValueError::String.into())
 		}
 	}
 }
@@ -81,15 +109,34 @@ impl PartialEq for Value {
 				}
 
 				set.nodes.iter()
-				.find(|node| {
-					match node {
-						Node::Attribute(attr) => {
-							attr.value() == value
-						}
+				.any(|node| {
+					// TODO: No.
+					if &format!("{:?}", node) == value {
+						true
+					} else {
+						match node {
+							Node::Attribute(attr) => {
+								attr.value() == value
+							}
 
-						_ => false
+							Node::Text(handle) => {
+								let upgrade = handle.upgrade().unwrap();
+								if let NodeData::Text { contents } = &upgrade.data {
+									contents.try_borrow().map(|v| v.as_ref() == value).unwrap_or_default()
+								} else {
+									false
+								}
+							}
+
+							_ => false
+						}
 					}
-				}).is_some()
+				})
+			}
+
+			(Value::Nodeset(set1), Value::Nodeset(set2)) => {
+				// TODO: No.
+				format!("{:?}", set1) == format!("{:?}", set2)
 			}
 
 			_ => false
@@ -236,7 +283,7 @@ impl Node {
 				if let NodeData::Text { contents } = &node.upgrade().unwrap().data {
 					Value::String(contents.borrow().to_string())
 				} else {
-					panic!()
+					panic!("Node didn't contain text data.")
 				}
 			}
 
@@ -246,6 +293,10 @@ impl Node {
 
 	pub fn as_simple_html(&self) -> String {
 		match self {
+			Node::Root(_) => {
+				panic!("Cannot Serialize Root Node.")
+			}
+
 			Node::Attribute(attr) => {
 				format!("@{}={}", attr.name_string(), attr.value())
 			}
@@ -276,18 +327,18 @@ impl Node {
 	pub fn parent(&self) -> Option<Node> {
 		match self {
 			Node::Attribute(attr) => attr.parent.upgrade()
-				.and_then(|node| get_opt_node_from_cell(&node.parent).map(|i| Node::Element(i))),
+				.and_then(|node| get_opt_node_from_cell(&node.parent).map(Node::Element)),
 			Node::DocType(_) |
 			Node::Namespace(_) |
 			Node::Root(_) => None,
 			Node::Element(weak) => weak.upgrade()
-				.and_then(|node| get_opt_node_from_cell(&node.parent).map(|i| Node::Element(i))),
+				.and_then(|node| get_opt_node_from_cell(&node.parent).map(Node::Element)),
 			Node::Text(weak) => weak.upgrade()
-				.and_then(|node| get_opt_node_from_cell(&node.parent).map(|i| Node::Text(i))),
+				.and_then(|node| get_opt_node_from_cell(&node.parent).map(Node::Text)),
 			Node::Comment(weak) => weak.upgrade()
-				.and_then(|node| get_opt_node_from_cell(&node.parent).map(|i| Node::Comment(i))),
+				.and_then(|node| get_opt_node_from_cell(&node.parent).map(Node::Comment)),
 			Node::ProcessingInstruction(weak) => weak.upgrade()
-				.and_then(|node| get_opt_node_from_cell(&node.parent).map(|i| Node::ProcessingInstruction(i)))
+				.and_then(|node| get_opt_node_from_cell(&node.parent).map(Node::ProcessingInstruction))
 		}
 	}
 
@@ -296,12 +347,10 @@ impl Node {
 			Node::Root(handle) => {
 				let node = handle.as_ref();
 
-				let items = node.children.borrow()
+				node.children.borrow()
 				.iter()
 				.map(|c| c.into())
-				.collect();
-
-				items
+				.collect()
 			}
 
 			Node::Text(handle) |
@@ -310,12 +359,11 @@ impl Node {
 			Node::Element(handle) => {
 				let node = handle.upgrade().unwrap();
 
-				let items = node.children.borrow()
-				.iter()
-				.map(|c| c.into())
-				.collect();
+				let borrow = node.children.borrow();
 
-				items
+				borrow.iter()
+				.map(|c| c.into())
+				.collect()
 			}
 
 			_ => unimplemented!("Node::children(\"{}\")", self.enum_name())
@@ -365,7 +413,7 @@ impl Node {
 
 	pub fn inner_weak(&self) -> &WeakNodeHandle {
 		match self {
-			Node::Root(..) => panic!(),
+			Node::Root(..) => panic!("Root node doesn't have a weak reference"),
 			Node::DocType(weak) |
 			Node::Namespace(weak) |
 			Node::Element(weak) |
@@ -408,8 +456,6 @@ impl From<&NodeHandle> for Node {
 			NodeData::Doctype { .. } => {
 				Node::DocType(Rc::downgrade(handle))
 			}
-
-			i @ _ => panic!("From NodeHandle: {:?}", i)
 		}
 	}
 }
@@ -440,8 +486,6 @@ impl From<NodeHandle> for Node {
 			NodeData::Text{ .. } => {
 				Node::Text(Rc::downgrade(&handle))
 			}
-
-			_ => panic!("From NodeHandle")
 		}
 	}
 }
@@ -458,7 +502,7 @@ impl PartialEq for Node {
 
 pub fn compare_weak_nodes(left: &WeakNodeHandle, right: &WeakNodeHandle) -> bool {
 	let left_upgrade = left.upgrade().unwrap();
-	let right_upgrade = left.upgrade().unwrap();
+	let right_upgrade = right.upgrade().unwrap();
 
 	compare_nodes(&left_upgrade, &right_upgrade)
 }
@@ -657,9 +701,7 @@ pub struct Nodeset {
 
 impl Nodeset {
 	pub fn new() -> Self {
-		Nodeset {
-			nodes: Vec::new()
-		}
+		Default::default()
 	}
 
 	pub fn add_node_handle(&mut self, node: &NodeHandle) {
@@ -673,7 +715,24 @@ impl Nodeset {
 	pub fn extend(&mut self, nodeset: Nodeset) {
 		self.nodes.extend(nodeset.nodes);
 	}
+
+	pub fn len(&self) -> usize {
+		self.nodes.len()
+	}
+
+	pub fn is_empty(&self) -> bool {
+		self.nodes.is_empty()
+	}
 }
+
+impl Default for Nodeset {
+	fn default() -> Self {
+		Nodeset {
+			nodes: Vec::new()
+		}
+	}
+}
+
 
 impl IntoIterator for Nodeset {
 	type Item = Node;

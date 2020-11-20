@@ -1,9 +1,7 @@
 use regex::Regex;
 
-use crate::{Result, Error, NameTest};
+use crate::{Result, Error, NameTest, DEBUG};
 use crate::tokens::{AxisName, ExprToken, Operator, NodeType};
-
-static DEBUG: bool = false;
 
 pub type Id<T> = (&'static str, T);
 
@@ -262,11 +260,8 @@ impl Tokenizer {
 				let mut node_type: NodeType = results.into();
 
 				// Check to see if it's a Processing Instruction. If so, check the parentheses
-				match &mut node_type {
-					NodeType::ProcessingInstruction(inner) => {
-						*inner = inner_str.map(|i| i.to_string());
-					}
-					_ => {}
+				if let NodeType::ProcessingInstruction(inner) = &mut node_type {
+					*inner = inner_str.map(|i| i.to_string());
 				}
 
 				return Some((last_pos, ExprToken::NodeType(node_type)));
@@ -326,13 +321,13 @@ impl Tokenizer {
 		// TODO: parse_token_array defines it as an Operator.
 		// *
 		if bytes[0] == b'*' {
-			return Some((1, ExprToken::NameTest(NameTest { prefix: None, local_part: "*".into() })));
+			Some((1, ExprToken::NameTest(NameTest { prefix: None, local_part: "*".into() })))
 		} else {
 			let reg = Regex::new(r#"^[a-zA-Z0-9_]+:\*"#).unwrap();
 
 			// NCName:*
 			if let Some(found) = reg.find(rem_path) {
-				let opts = rem_path[0..found.end()].split(":").collect::<Vec<&str>>();
+				let opts = rem_path[0..found.end()].split(':').collect::<Vec<&str>>();
 
 				Some((found.end(), ExprToken::NameTest(NameTest { prefix: Some(opts[0].into()), local_part: opts[1].into() })))
 			} else {
@@ -340,7 +335,7 @@ impl Tokenizer {
 				let reg = Regex::new(r#"(^[a-zA-Z0-9_]+:?(?:[a-zA-Z0-9_]+)?)"#).unwrap();
 
 				if let Some(found) = reg.find(rem_path) {
-					let opts = rem_path[0..found.end()].split(":").collect::<Vec<&str>>();
+					let opts = rem_path[0..found.end()].split(':').collect::<Vec<&str>>();
 
 					if opts.len() == 1 {
 						Some((found.end(), ExprToken::NameTest(NameTest { prefix: None, local_part: opts[0].into() })))
@@ -355,7 +350,7 @@ impl Tokenizer {
 	}
 
 
-	fn find_function_parenth<'a>(rem_path: &'a str) -> Option<(usize, Option<&'a str>)> {
+	fn find_function_parenth(rem_path: &str) -> Option<(usize, Option<&str>)> {
 		if DEBUG { println!("parse_function_parenth"); }
 
 		let bytes = rem_path.as_bytes();
@@ -384,14 +379,14 @@ impl Tokenizer {
 		None
 	}
 
-	fn find_qname<'a>(_path: &'a str) -> Option<&'a str> {
-		None
-	}
+	// fn find_qname(_path: &str) -> Option<&str> {
+	// 	None
+	// }
 
-	// 'Name' with ':' removed
-	fn find_ncname<'a>(_path: &'a str) -> Option<&'a str> {
-		None
-	}
+	// // 'Name' with ':' removed
+	// fn find_ncname(_path: &str) -> Option<&str> {
+	// 	None
+	// }
 }
 
 

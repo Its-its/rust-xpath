@@ -24,7 +24,8 @@
 
 use std::fmt;
 
-use crate::{Value, Evaluation, Result, AxisName, Nodeset, NodeTest, Node};
+use crate::functions;
+use crate::{DEBUG, Value, Evaluation, Result, AxisName, Nodeset, NodeTest, Node};
 
 pub type CallFunction = fn(ExpressionArg, ExpressionArg) -> ExpressionArg;
 pub type ExpressionArg = Box<dyn Expression>;
@@ -141,7 +142,7 @@ impl Path {
 impl Expression for Path {
 	fn eval(&self, eval: &Evaluation) -> Result<Value> {
 		let result = self.start_pos.eval(eval)?;
-		let mut set = result.into_nodeset();
+		let mut set = result.into_nodeset()?;
 
 		for step in &self.steps {
 			set = step.evaluate(eval, set)?;
@@ -178,7 +179,7 @@ impl Step {
 		}
 	}
 
-	fn evaluate<'c, 'd>(
+	fn evaluate(
 		&self,
 		context: &Evaluation,
 		starting_nodes: Nodeset,
@@ -193,13 +194,18 @@ impl Step {
 
 		for node in starting_nodes.nodes {
 			let child_context = context.new_evaluation_from(node);
-			let mut nodes = child_context.find_nodes(&self.axis, &self.node_test);
-
-			for predicate in &self.predicates {
-				nodes = predicate.select(&child_context, nodes)?;
-			}
+			let nodes = child_context.find_nodes(&self.axis, self.node_test.as_ref());
 
 			unique.extend(nodes);
+		}
+
+		if DEBUG && !self.predicates.is_empty() {
+			println!("Pre Predicate:");
+			println!("{:#?}", unique);
+		}
+
+		for predicate in &self.predicates {
+			unique = predicate.select(&context, unique)?;
 		}
 
 		Ok(unique)
@@ -218,15 +224,14 @@ impl Predicate {
 		nodes: Nodeset,
 	) -> Result<Nodeset> {
 		let found: Vec<Node> = context.new_evaluation_set_from(nodes)
-		.filter_map(|ctx| {
-			match self.matches_eval(&ctx) {
-				Ok(true) => Some(Ok(ctx.node)),
-				Ok(false) => None,
-				Err(e) => Some(Err(e)),
-			}
-		})
-		.filter_map(|n| n.ok())
-		.collect();
+			.filter_map(|ctx| {
+				match self.matches_eval(&ctx) {
+					Ok(true) => Some(Ok(ctx.node)),
+					Ok(false) => None,
+					Err(e) => Some(Err(e)),
+				}
+			})
+			.collect::<Result<Vec<Node>>>()?;
 
 		Ok(found.into())
 	}
@@ -240,5 +245,21 @@ impl Predicate {
 			// Otherwise ensure a value properly exists.
 			_ => value.exists()
 		})
+	}
+}
+
+
+#[derive(Debug)]
+pub struct Function(Box<dyn functions::Function>);
+
+impl Function {
+	pub fn new(inner: Box<dyn functions::Function>) -> Function {
+		Function(inner)
+	}
+}
+
+impl Expression for Function {
+	fn eval(&self, eval: &Evaluation) -> Result<Value> {
+		self.0.exec(eval)
 	}
 }

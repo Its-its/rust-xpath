@@ -1,8 +1,5 @@
 // What we'll be iterating through.
 
-use std::rc::Rc;
-
-
 use crate::{Document, Node, Nodeset, AxisName, NodeTest};
 use crate::value;
 
@@ -31,17 +28,16 @@ impl<'a> Evaluation<'a> {
 		&self.document.root
 	}
 
-	pub fn find_nodes(&self, context: &AxisName, node_test: &Box<dyn NodeTest>) -> Nodeset {
+	pub fn find_nodes(&self, context: &AxisName, node_test: &dyn NodeTest) -> Nodeset {
 		let mut nodeset = Nodeset::new();
 
 		match context {
 			AxisName::Ancestor => {
-				self.node.parent()
-				.map(|parent| {
+				if let Some(parent) = self.node.parent() {
 					let eval = self.new_evaluation_from(parent);
 					node_test.test(&eval, &mut nodeset);
 					eval.find_nodes(&AxisName::Ancestor, node_test);
-				});
+				}
 			}
 
 			AxisName::AncestorOrSelf => {
@@ -53,7 +49,7 @@ impl<'a> Evaluation<'a> {
 				if let Node::Element(node) = &self.node {
 					value::Attribute::from_node(node)
 					.into_iter()
-					.map(|a| Node::Attribute(a))
+					.map(Node::Attribute)
 					.for_each(|node| {
 						node_test.test(
 							&self.new_evaluation_from(node),
@@ -168,7 +164,7 @@ impl<'a> Evaluation<'a> {
 	pub fn new_evaluation_from(&'a self, node: Node) -> Self {
 		Self {
 			document: self.document,
-			node: node,
+			node,
 			position: 1,
 			size: 1
 		}

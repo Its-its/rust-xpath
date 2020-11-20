@@ -199,6 +199,13 @@ impl ExprToken {
 			_ => false
 		}
 	}
+
+	pub fn is_function_name(&self) -> bool {
+		match self {
+			ExprToken::FunctionName(_) => true,
+			_ => false
+		}
+	}
 }
 
 macro_rules! from_impl {
