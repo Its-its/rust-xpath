@@ -1,10 +1,10 @@
 use std::fmt;
 
-use crate::{Value, Result, Error};
+use crate::{Value, Result};
 use crate::result::ValueError;
 
 use crate::expressions::Expression;
-use crate::{Evaluation, Nodeset, Node, NodeTest};
+use crate::{Evaluation, Nodeset};
 
 pub trait Function: fmt::Debug {
 	fn exec(&self, eval: &Evaluation) -> Result<Value>;
@@ -90,9 +90,45 @@ impl Function for Contains {
 
 // Boolean Functions
 // boolean boolean(object)
+
 // boolean not(boolean)
+#[derive(Debug)]
+pub struct Not(Box<dyn Expression>);
+
+impl Not {
+	pub fn new(value: Box<dyn Expression>) -> Self {
+		Not(value)
+	}
+}
+
+impl Function for Not {
+	fn exec(&self, eval: &Evaluation) -> Result<Value> {
+		let found = self.0.eval(eval)?;
+		Ok(Value::Boolean(!found.boolean()?))
+	}
+}
+
+
 // boolean true()
+#[derive(Debug)]
+pub struct True;
+
+impl Function for True {
+	fn exec(&self, _: &Evaluation) -> Result<Value> {
+		Ok(Value::Boolean(true))
+	}
+}
+
 // boolean false()
+#[derive(Debug)]
+pub struct False;
+
+impl Function for False {
+	fn exec(&self, _: &Evaluation) -> Result<Value> {
+		Ok(Value::Boolean(false))
+	}
+}
+
 // boolean lang(string)
 
 // Number Functions

@@ -464,6 +464,18 @@ impl<'a> Factory<'a> {
 					Ok(Some(Box::new(functions::Position)))
 				}
 
+				"true" => {
+					step.consume(&ExprToken::RightParen)?;
+
+					Ok(Some(Box::new(functions::True)))
+				}
+
+				"false" => {
+					step.consume(&ExprToken::RightParen)?;
+
+					Ok(Some(Box::new(functions::False)))
+				}
+
 				"contains" => {
 					let expr = self.parse_expression(step)?;
 
@@ -475,6 +487,18 @@ impl<'a> Factory<'a> {
 
 					if let Some(expr) = expr {
 						Ok(Some(Box::new(functions::Contains::new(expr, Value::String(value)))))
+					} else {
+						Ok(None)
+					}
+				}
+
+				"not" => {
+					let expr = self.parse_expression(step)?;
+
+					step.consume(&ExprToken::RightParen)?;
+
+					if let Some(expr) = expr {
+						Ok(Some(Box::new(functions::Not::new(expr))))
 					} else {
 						Ok(None)
 					}
