@@ -29,11 +29,15 @@ pub static DOUBLE_CHAR_TOKENS: [Id<ExprToken>; 5] = [
     ("..", ExprToken::ParentNode)
 ];
 
-pub static NAMED_OPERATORS: [Id<ExprToken>; 5] = [
+// TODO: Disabled for now.
+// Reasons:
+//     '/html/body/div[1]/following::*'    'div' being converted
+//     '/html/body/*'                      '*' being converted
+pub static NAMED_OPERATORS: [Id<ExprToken>; 3] = [
     ("and", ExprToken::Operator(Operator::And)),
     ("or" , ExprToken::Operator(Operator::Or)),
-    ("mod", ExprToken::Operator(Operator::Mod)),
-    ("div", ExprToken::Operator(Operator::Div)),
+    // ("mod", ExprToken::Operator(Operator::Mod)),
+    // ("div", ExprToken::Operator(Operator::Div)),
     ("*"  , ExprToken::Operator(Operator::Star))
 ];
 
@@ -111,11 +115,7 @@ impl Tokenizer {
 			// Current Node
 			.or_else(|| Tokenizer::parse_current_node(remaining_xpath))
 			// Named Operators
-			// TODO: Disabled for now.
-			// Reasons:
-			//     '/html/body/div[1]/following::*'    'div' being converted
-			//     '/html/body/*'                      '*' being converted
-			// .or_else(|| Tokenizer::parse_token_array(remaining_xpath, &NAMED_OPERATORS))
+			.or_else(|| Tokenizer::parse_token_array(remaining_xpath, &NAMED_OPERATORS))
 			// Axis Specifier
 			.or_else(|| Tokenizer::parse_axes(remaining_xpath))
 			// Node Type
