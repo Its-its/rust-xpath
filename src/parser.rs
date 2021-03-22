@@ -325,14 +325,24 @@ impl Tokenizer {
 		} else {
 			let reg = Regex::new(r#"^[a-zA-Z0-9_]+:\*"#).unwrap();
 
+			let a = String::from_utf16_lossy(&[0x9]);
+
 			// NCName:*
 			if let Some(found) = reg.find(rem_path) {
 				let opts = rem_path[0..found.end()].split(':').collect::<Vec<&str>>();
 
 				Some((found.end(), ExprToken::NameTest(NameTest { prefix: Some(opts[0].into()), local_part: opts[1].into() })))
 			} else {
+				// Char Range for LocalPart.
+				// let mut valid = vec![0x9, 0xA, 0xD];
+				// valid.append(&mut (0x20..=0xD7FF).collect());
+				// valid.append(&mut (0xE000..=0xFFFD).collect());
+				// valid.append(&mut (0x10000..=0x10FFFF).collect());
+
+				// println!("{}", String::from_utf16_lossy(&valid));
+
 				// Prefix ':' LocalPart | LocalPart
-				let reg = Regex::new(r#"(^[a-zA-Z0-9_]+:?(?:[a-zA-Z0-9_]+)?)"#).unwrap();
+				let reg = Regex::new(r#"(^[a-zA-Z0-9_-]+:?(?:[a-zA-Z0-9_-]+)?)"#).unwrap();
 
 				if let Some(found) = reg.find(rem_path) {
 					let opts = rem_path[0..found.end()].split(':').collect::<Vec<&str>>();
