@@ -437,7 +437,7 @@ dependencies = [
 
 [[package]]
 name = "xpath"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "html5ever",
  "markup5ever",
