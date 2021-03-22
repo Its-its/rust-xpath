@@ -201,14 +201,14 @@ impl<'a> Factory<'a> {
 		let left_expr = self.parse_relational_expression(step)?;
 
 		// Self '=' RelationalExpr
-		if step.consume_if_next_token_is(&Operator::Equal.into())? {
+		if step.consume_if_next_token_is(Operator::Equal)? {
 			let right_expr = self.parse_relational_expression(step)?;
 
 			return Ok(Some(Box::new(Equal::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
 		}
 
 		// Self '!=' RelationalExpr
-		if step.consume_if_next_token_is(&Operator::DoesNotEqual.into())? {
+		if step.consume_if_next_token_is(Operator::DoesNotEqual)? {
 			let right_expr = self.parse_relational_expression(step)?;
 
 			return Ok(Some(Box::new(NotEqual::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
@@ -252,8 +252,8 @@ impl<'a> Factory<'a> {
 
 	// UnaryExpr			::= UnionExpr | '-' Self
 	fn parse_unary_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		if step.is_next_token(&ExprToken::Operator(Operator::Minus)) {
-			let _ = step.consume(&ExprToken::Operator(Operator::Minus))?;
+		if step.is_next_token(Operator::Minus) {
+			let _ = step.consume(Operator::Minus)?;
 		}
 		// TODO: If missing union after consuming minus.
 
@@ -284,8 +284,8 @@ impl<'a> Factory<'a> {
 
         match self.parse_filter_expression(step)? {
             Some(expr) => {
-                if step.is_next_token(&Operator::ForwardSlash.into()) {
-                    step.consume(&Operator::ForwardSlash.into())?;
+                if step.is_next_token(Operator::ForwardSlash) {
+                    step.consume(Operator::ForwardSlash)?;
 
 					let expr = self.parse_location_path_raw(step, expr)?;
 
@@ -316,8 +316,8 @@ impl<'a> Factory<'a> {
 
 	// AbsoluteLocationPath	::= '/' RelativeLocationPath? | AbbreviatedAbsoluteLocationPath
 	fn parse_absolute_location_path<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		if step.is_next_token(&Operator::ForwardSlash.into()) {
-            step.consume(&Operator::ForwardSlash.into())?;
+		if step.is_next_token(Operator::ForwardSlash) {
+            step.consume(Operator::ForwardSlash)?;
 
             match self.parse_location_path_raw(step, Box::new(RootNode))? {
                 Some(expr) => Ok(Some(expr)),
@@ -340,8 +340,8 @@ impl<'a> Factory<'a> {
             Some(expr_step) => {
                 let mut steps = vec![expr_step];
 
-                while step.is_next_token(&Operator::ForwardSlash.into()) {
-					step.consume(&Operator::ForwardSlash.into())?;
+                while step.is_next_token(Operator::ForwardSlash) {
+					step.consume(Operator::ForwardSlash)?;
 
 					// TODO: Correctly fix Operator::Star in Tokenizer
 					// if step.is_next_token(&Operator::Star.into()) {
@@ -449,29 +449,29 @@ impl<'a> Factory<'a> {
 	fn parse_function_call<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> Result<Option<Box<dyn functions::Function>>> {
 		if step.is_next_token_func(|i| i.is_function_name()) {
 			let fn_name = return_value!(step, ExprToken::FunctionName);
-			step.consume(&ExprToken::LeftParen)?;
+			step.consume(ExprToken::LeftParen)?;
 
 			match fn_name.as_str() {
 				"last" => {
-					step.consume(&ExprToken::RightParen)?;
+					step.consume(ExprToken::RightParen)?;
 
 					Ok(Some(Box::new(functions::Last)))
 				}
 
 				"position" => {
-					step.consume(&ExprToken::RightParen)?;
+					step.consume(ExprToken::RightParen)?;
 
 					Ok(Some(Box::new(functions::Position)))
 				}
 
 				"true" => {
-					step.consume(&ExprToken::RightParen)?;
+					step.consume(ExprToken::RightParen)?;
 
 					Ok(Some(Box::new(functions::True)))
 				}
 
 				"false" => {
-					step.consume(&ExprToken::RightParen)?;
+					step.consume(ExprToken::RightParen)?;
 
 					Ok(Some(Box::new(functions::False)))
 				}
@@ -479,11 +479,11 @@ impl<'a> Factory<'a> {
 				"contains" => {
 					let expr = self.parse_expression(step)?;
 
-					step.consume(&ExprToken::Comma)?;
+					step.consume(ExprToken::Comma)?;
 
 					let value = return_value!(step, ExprToken::Literal);
 
-					step.consume(&ExprToken::RightParen)?;
+					step.consume(ExprToken::RightParen)?;
 
 					if let Some(expr) = expr {
 						Ok(Some(Box::new(functions::Contains::new(expr, Value::String(value)))))
@@ -495,7 +495,7 @@ impl<'a> Factory<'a> {
 				"not" => {
 					let expr = self.parse_expression(step)?;
 
-					step.consume(&ExprToken::RightParen)?;
+					step.consume(ExprToken::RightParen)?;
 
 					if let Some(expr) = expr {
 						Ok(Some(Box::new(functions::Not::new(expr))))
@@ -569,12 +569,12 @@ impl<'a> Factory<'a> {
 
 
 	fn parse_predicate_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		if step.is_next_token(&ExprToken::LeftBracket) {
-			step.consume(&ExprToken::LeftBracket)?;
+		if step.is_next_token(ExprToken::LeftBracket) {
+			step.consume(ExprToken::LeftBracket)?;
 
 			let val = self.parse_expression(step)?;
 
-			step.consume(&ExprToken::RightBracket)?;
+			step.consume(ExprToken::RightBracket)?;
 
 			Ok(val)
 		} else {
@@ -608,9 +608,9 @@ impl<S: Iterator<Item = ExprToken>> Stepper<S> {
 		self.peek().is_some()
 	}
 
-	pub fn is_next_token(&mut self, token: &ExprToken) -> bool {
+	pub fn is_next_token<T: Into<ExprToken>>(&mut self, token: T) -> bool {
 		match self.peek() {
-			Some(t) => t == token,
+			Some(t) => t == &token.into(),
 			None => false
 		}
 	}
@@ -622,7 +622,7 @@ impl<S: Iterator<Item = ExprToken>> Stepper<S> {
 		}
 	}
 
-	pub fn consume_if_next_token_is(&mut self, token: &ExprToken) -> Result<bool> {
+	pub fn consume_if_next_token_is<T: Into<ExprToken> + Copy>(&mut self, token: T) -> Result<bool> {
 		if self.is_next_token(token) {
 			self.consume(token)?;
 
@@ -632,10 +632,10 @@ impl<S: Iterator<Item = ExprToken>> Stepper<S> {
 		}
 	}
 
-	pub fn consume(&mut self, token: &ExprToken) -> Result<()> {
+	pub fn consume<T: Into<ExprToken>>(&mut self, token: T) -> Result<()> {
 		let step = self.next().ok_or(Error::InputEmpty)?;
 
-		if &step == token {
+		if step == token.into() {
 			Ok(())
 		} else {
 			Err(Error::UnexpectedToken(step))
