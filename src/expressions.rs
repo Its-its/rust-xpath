@@ -82,6 +82,49 @@ impl Expression for NotEqual {
 }
 
 
+#[derive(Debug)]
+pub struct And {
+	left: ExpressionArg,
+	right: ExpressionArg
+}
+
+impl And {
+	pub fn new(left: ExpressionArg, right: ExpressionArg) -> Self {
+		Self { left, right }
+	}
+}
+
+impl Expression for And {
+	fn eval(&self, eval: &Evaluation) -> Result<Value> {
+		let left_value = self.left.eval(eval)?;
+		let right_value = self.right.eval(eval)?;
+
+		Ok(Value::Boolean(left_value.boolean()? && right_value.boolean()?))
+	}
+}
+
+
+
+#[derive(Debug)]
+pub struct Or {
+	left: ExpressionArg,
+	right: ExpressionArg
+}
+
+impl Or {
+	pub fn new(left: ExpressionArg, right: ExpressionArg) -> Self {
+		Self { left, right }
+	}
+}
+
+impl Expression for Or {
+	fn eval(&self, eval: &Evaluation) -> Result<Value> {
+		let left_value = self.left.eval(eval)?;
+		let right_value = self.right.eval(eval)?;
+
+		Ok(Value::Boolean(left_value.boolean()? || right_value.boolean()?))
+	}
+}
 
 // Primary Expressions
 

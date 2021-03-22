@@ -2,7 +2,7 @@
 use std::iter::Peekable;
 
 use crate::{DEBUG, Tokenizer, Evaluation, Node, ExprToken, Operator, Error, Result, Value, NodeTest, NodeType, PrincipalNodeType, AxisName};
-use crate::expressions::{ExpressionArg, ContextNode, RootNode, Path, Step, Literal, Equal, NotEqual, Function};
+use crate::expressions::{ExpressionArg, ContextNode, RootNode, Path, Step, Literal, Equal, NotEqual, And, Or, Function};
 use crate::nodetest;
 use crate::functions;
 
@@ -182,7 +182,11 @@ impl<'a> Factory<'a> {
 		let left_expr = self.parse_and_expression(step)?;
 
 		// Self 'or' AndExpr
+		if step.consume_if_next_token_is(Operator::Or)? {
+			let right_expr = self.parse_relational_expression(step)?;
 
+			return Ok(Some(Box::new(Or::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
+		}
 
 		Ok(left_expr)
 	}
@@ -192,6 +196,11 @@ impl<'a> Factory<'a> {
 		let left_expr = self.parse_equality_expression(step)?;
 
 		// Self 'and' EqualityExpr
+		if step.consume_if_next_token_is(Operator::And)? {
+			let right_expr = self.parse_relational_expression(step)?;
+
+			return Ok(Some(Box::new(And::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
+		}
 
 		Ok(left_expr)
 	}
