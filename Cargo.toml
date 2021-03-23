@@ -8,6 +8,7 @@ homepage = "https://github.com/Its-its/rust-xpath"
 respository = "https://github.com/Its-its/rust-xpath"
 readme = "README.md"
 keywords = ["xpath"]
+description = "A remake of sxd-xpath to teach myself more about parsing from scratch. Uses Regex, html5ever, and markup5ever"
 
 [dependencies]
 regex = "1.4"
