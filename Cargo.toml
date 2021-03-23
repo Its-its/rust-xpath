@@ -1,7 +1,7 @@
 [package]
 name = "xpather"
 version = "0.1.4"
-authors = ["Timothy <2779546+Its-its@users.noreply.github.com>"]
+authors = ["Timothy <programming@its.rip>"]
 edition = "2018"
 license = "MIT"
 homepage = "https://github.com/Its-its/rust-xpath"
