@@ -436,7 +436,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "xpath"
+name = "xpather"
 version = "0.1.4"
 dependencies = [
  "html5ever",
