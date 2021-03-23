@@ -10,8 +10,8 @@ readme = "README.md"
 keywords = ["xpath"]
 
 [dependencies]
-regex = "1.3.4"
+regex = "1.4"
 
-html5ever = "0.25.1"
-markup5ever = "0.10.0"
-markup5ever_rcdom  = "0.1.0"
+html5ever = "0.25"
+markup5ever = "0.10"
+markup5ever_rcdom  = "0.1"
