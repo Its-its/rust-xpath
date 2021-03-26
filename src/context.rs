@@ -47,15 +47,16 @@ impl<'a> Evaluation<'a> {
 
 			AxisName::Attribute => {
 				if let Node::Element(node) = &self.node {
-					value::Attribute::from_node(node)
-					.into_iter()
-					.map(Node::Attribute)
-					.for_each(|node| {
-						node_test.test(
-							&self.new_evaluation_from(node),
-							&mut nodeset
-						);
-					});
+					if let Some(attrs) = value::Attribute::from_node(node) {
+						attrs.into_iter()
+						.map(Node::Attribute)
+						.for_each(|node| {
+							node_test.test(
+								&self.new_evaluation_from(node),
+								&mut nodeset
+							);
+						});
+					}
 				}
 			}
 

@@ -257,7 +257,10 @@ impl Tokenizer {
 			if let Some((size, inner_str)) = Tokenizer::find_function_parenth(&rem_path[last_pos..]) {
 				last_pos += size;
 
-				let mut node_type: NodeType = results.into();
+				let mut node_type: NodeType = match results.into() {
+					Some(v) => v,
+					None => return None
+				};
 
 				// Check to see if it's a Processing Instruction. If so, check the parentheses
 				if let NodeType::ProcessingInstruction(inner) = &mut node_type {
@@ -324,8 +327,6 @@ impl Tokenizer {
 			Some((1, ExprToken::NameTest(NameTest { prefix: None, local_part: "*".into() })))
 		} else {
 			let reg = Regex::new(r#"^[a-zA-Z0-9_]+:\*"#).unwrap();
-
-			let a = String::from_utf16_lossy(&[0x9]);
 
 			// NCName:*
 			if let Some(found) = reg.find(rem_path) {

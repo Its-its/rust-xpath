@@ -13,7 +13,11 @@ pub enum Error {
 	TrailingSlash,
 	MissingRightHandExpression,
 	UnexpectedToken(ExprToken),
-	InvalidValue(ValueError)
+	InvalidValue(ValueError),
+	CannotConvertNodeToValue,
+	NodeDidNotContainText,
+	UnableToEvaluate,
+	InvalidXpath
 }
 
 impl fmt::Display for Error {
@@ -24,7 +28,11 @@ impl fmt::Display for Error {
 			Token => write!(f, "Token Error"),
 			InputEmpty => write!(f, "Empty Input"),
 			TrailingSlash => write!(f, "Trailing Slash"),
+			UnableToEvaluate => write!(f, "Unable to Evaluate"),
+			InvalidXpath => write!(f, "Invalid Xpath"),
 			MissingRightHandExpression => write!(f, "Missing Right Hand Expression"),
+			CannotConvertNodeToValue => write!(f, "Cannot convert Node into Value"),
+			NodeDidNotContainText => write!(f, "Node did not contain Text"),
 			UnexpectedToken(v) => write!(f, "Unexpected Token: {:?}", v),
 			InvalidValue(v) => write!(f, "Invalid Value: {:?}", v),
 		}

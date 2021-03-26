@@ -6,7 +6,7 @@ use markup5ever::{Attribute as DomAttribute, QualName};
 use markup5ever_rcdom::{NodeData, Handle as NodeHandle, WeakHandle as WeakNodeHandle, SerializableHandle};
 use html5ever::serialize;
 
-use crate::Document;
+use crate::{Document, Error};
 use crate::result::{Result, ValueError};
 
 #[derive(Debug, Clone)]
@@ -49,20 +49,9 @@ impl Value {
 	}
 
 	pub fn vec_string(self) -> Result<Vec<String>> {
-		let result_iter: Vec<Result<String>> = self.into_iterset()?
-			.map(|i| i.value())
-			.map(|i| i.string())
-			.collect();
-
-		let result_len = result_iter.len();
-
-		let value_iter: Vec<String> = result_iter.into_iter()
-			.filter_map(|i| i.ok())
-			.collect();
-
-		if value_iter.len() != result_len {
-			return Err(ValueError::String.into());
-		}
+		let value_iter = self.into_iterset()?
+			.map(|i| i.value().and_then(|v| v.string()))
+			.collect::<Result<Vec<String>>>()?;
 
 		Ok(value_iter)
 	}
@@ -164,11 +153,11 @@ impl Attribute {
 		}
 	}
 
-	pub fn from_node(node: &WeakNodeHandle) -> Vec<Attribute> {
+	pub fn from_node(node: &WeakNodeHandle) -> Option<Vec<Attribute>> {
 		if let NodeData::Element { attrs, .. } = &node.upgrade().unwrap().data {
-			attrs.borrow().iter().map(|a| Attribute::new(node.clone(), a.clone())).collect()
+			Some(attrs.borrow().iter().map(|a| Attribute::new(node.clone(), a.clone())).collect())
 		} else {
-			panic!("Node is not an Element for Attribute.")
+			None
 		}
 	}
 
@@ -181,7 +170,7 @@ impl Attribute {
 
 		if let Some(prefix) = &self.attr.name.prefix {
 			comp.push_str(&prefix);
-			comp.push_str(":");
+			comp.push(':');
 		}
 
 		comp.push_str(&self.attr.name.local);
@@ -225,80 +214,57 @@ impl Node {
 	}
 
 	pub fn is_root(&self) -> bool {
-		match self {
-			Node::Root(_) => true,
-			_ => false
-		}
+		matches!(self, Node::Root(_))
 	}
 
 	pub fn is_namespace(&self) -> bool {
-		match self {
-			Node::Namespace(_) => true,
-			_ => false
-		}
+		matches!(self, Node::Namespace(_))
 	}
 
 	pub fn is_element(&self) -> bool {
-		match self {
-			Node::Element(_) => true,
-			_ => false
-		}
+		matches!(self, Node::Element(_))
 	}
 
 	pub fn is_attribute(&self) -> bool {
-		match self {
-			Node::Attribute(_) => true,
-			_ => false
-		}
+		matches!(self, Node::Attribute(_))
 	}
 
 	pub fn is_text(&self) -> bool {
-		match self {
-			Node::Text(_) => true,
-			_ => false
-		}
+		matches!(self, Node::Text(_))
 	}
 
 	pub fn is_comment(&self) -> bool {
-		match self {
-			Node::Comment(_) => true,
-			_ => false
-		}
+		matches!(self, Node::Comment(_))
 	}
 
 	pub fn is_processing_instruction(&self) -> bool {
-		match self {
-			Node::ProcessingInstruction(_) => true,
-			_ => false
-		}
+		matches!(self, Node::ProcessingInstruction(_))
 	}
 
-	pub fn value(&self) -> Value {
+	pub fn value(&self) -> Result<Value> {
 		match self {
 			Node::Attribute(attr) => {
-				Value::String(attr.value().to_string())
+				Ok(Value::String(attr.value().to_string()))
 			}
 
 			Node::Text(node) => {
 				if let NodeData::Text { contents } = &node.upgrade().unwrap().data {
-					Value::String(contents.borrow().to_string())
+					Ok(Value::String(contents.borrow().to_string()))
 				} else {
-					panic!("Node didn't contain text data.")
+					Err(Error::NodeDidNotContainText)
 				}
 			}
 
-			_ => panic!("Node not convertable into a Value")
+			_ => Err(Error::CannotConvertNodeToValue)
 		}
 	}
 
-	pub fn as_simple_html(&self) -> String {
+	pub fn as_simple_html(&self) -> Option<String> {
 		match self {
-			Node::Root(_) => {
-				panic!("Cannot Serialize Root Node.")
-			}
+			Node::Root(_) => None,
 
 			Node::Attribute(attr) => {
-				format!("@{}={}", attr.name_string(), attr.value())
+				Some(format!("@{}={}", attr.name_string(), attr.value()))
 			}
 
 			_ => {
@@ -308,19 +274,19 @@ impl Node {
 
 				serialize::<_, SerializableHandle>(
 					write,
-					&self.inner_weak().upgrade().unwrap().into(),
+					&self.inner_weak()?.upgrade()?.into(),
 					html5ever::serialize::SerializeOpts { traversal_scope: markup5ever::serialize::TraversalScope::IncludeNode, .. Default::default() })
-				.expect("serialzing error");
+				.ok()?;
 
-				String::from_utf8(st).expect("from_utf8 error")
+				Some(String::from_utf8(st).ok()?)
 			}
 		}
 	}
 
-	pub fn attribute(&self) -> &Attribute {
+	pub fn attribute(&self) -> Option<&Attribute> {
 		match self {
-			Node::Attribute(attr) => attr,
-			_ => panic!("Node::attribute()")
+			Node::Attribute(attr) => Some(attr),
+			_ => None
 		}
 	}
 
@@ -371,39 +337,39 @@ impl Node {
 	}
 
 
-	pub fn name(&self) -> QualName {
+	pub fn name(&self) -> Option<QualName> {
 		match self {
 			Node::Element(node) => {
-				if let NodeData::Element { name, .. } = &node.upgrade().unwrap().data {
-					name.clone()
+				if let NodeData::Element { name, .. } = &node.upgrade()?.data {
+					Some(name.clone())
 				} else {
-					panic!("Name")
+					None
 				}
 			}
 
 			Node::Attribute(attr) => {
-				if let NodeData::Element { name, .. } = &attr.parent.upgrade().unwrap().data {
-					name.clone()
+				if let NodeData::Element { name, .. } = &attr.parent.upgrade()?.data {
+					Some(name.clone())
 				} else {
-					panic!("Name")
+					None
 				}
 			}
 
-			_ => panic!("Name")
+			_ => None
 		}
 	}
 
-	pub fn target(&self) -> String {
+	pub fn target(&self) -> Option<String> {
 		match self {
 			Node::ProcessingInstruction(node) => {
-				if let NodeData::ProcessingInstruction { target, .. } = &node.upgrade().unwrap().data {
-					target.to_string()
+				if let NodeData::ProcessingInstruction { target, .. } = &node.upgrade()?.data {
+					Some(target.to_string())
 				} else {
-					panic!("Name")
+					None
 				}
 			}
 
-			_ => panic!("Name")
+			_ => None
 		}
 	}
 
@@ -411,21 +377,21 @@ impl Node {
 		unimplemented!("Node::prefix()");
 	}
 
-	pub fn inner_weak(&self) -> &WeakNodeHandle {
+	pub fn inner_weak(&self) -> Option<&WeakNodeHandle> {
 		match self {
-			Node::Root(..) => panic!("Root node doesn't have a weak reference"),
+			Node::Root(..) => None,
 			Node::DocType(weak) |
 			Node::Namespace(weak) |
 			Node::Element(weak) |
 			Node::Text(weak) |
 			Node::Comment(weak) |
-			Node::ProcessingInstruction(weak) => weak,
-			Node::Attribute(weak) => &weak.parent
+			Node::ProcessingInstruction(weak) => Some(weak),
+			Node::Attribute(weak) => Some(&weak.parent)
 		}
 	}
 
 
-	pub fn evaluate_from<S: Into<String>>(&self, search: S, doc: &Document) -> Option<Value> {
+	pub fn evaluate_from<S: Into<String>>(&self, search: S, doc: &Document) -> Result<Value> {
 		doc.evaluate_from(search, self.clone())
 	}
 }
@@ -496,7 +462,10 @@ impl PartialEq for Node {
 			return self.is_root() == other.is_root();
 		}
 
-		compare_weak_nodes(self.inner_weak(), other.inner_weak())
+		match (self.inner_weak(), other.inner_weak()) {
+			(Some(left), Some(right)) => compare_weak_nodes(left, right),
+			_ => false
+		}
 	}
 }
 
@@ -517,7 +486,10 @@ pub fn preceding_nodes_from_parent(node: &Node) -> Vec<Node> {
 }
 
 fn find_nodes_from_parent<F: Fn(usize, usize) -> bool>(node: &Node, f_capture: F) -> Vec<Node> {
-	let node = node.inner_weak().upgrade().unwrap();
+	let node = match node.inner_weak().and_then(|v| v.upgrade()) {
+		Some(v) => v,
+		None => return Vec::new()
+	};
 
 	// Taken from markup5ever_rcdom
 	if let Some(weak) = node.parent.take() {
@@ -532,7 +504,7 @@ fn find_nodes_from_parent<F: Fn(usize, usize) -> bool>(node: &Node, f_capture: F
 			.find(|&(_, child)| Rc::ptr_eq(&child, &node))
 		{
 			Some((i, _)) => i,
-			None => panic!("have parent but couldn't find in parent's children!"),
+			None => return Vec::new()
 		};
 
 		children

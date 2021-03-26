@@ -1,5 +1,5 @@
 
-use crate::{NameTest};
+use crate::NameTest;
 
 // https://www.w3.org/TR/1999/REC-xpath-19991116/#NT-AxisName
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -159,52 +159,31 @@ pub enum ExprToken {
 
 impl ExprToken {
 	pub fn is_node_type(&self) -> bool {
-		match self {
-			ExprToken::NodeType(_) => true,
-			_ => false
-		}
+		matches!(self, ExprToken::NodeType(_))
 	}
 
 	pub fn is_name_test(&self) -> bool {
-		match self {
-			ExprToken::NameTest(_) => true,
-			_ => false
-		}
+		matches!(self, ExprToken::NameTest(_))
 	}
 
 	pub fn is_operator(&self) -> bool {
-		match self {
-			ExprToken::Operator(_) => true,
-			_ => false
-		}
+		matches!(self, ExprToken::Operator(_))
 	}
 
 	pub fn is_axis(&self) -> bool {
-		match self {
-			ExprToken::Axis(_) => true,
-			_ => false
-		}
+		matches!(self, ExprToken::Axis(_))
 	}
 
 	pub fn is_literal(&self) -> bool {
-		match self {
-			ExprToken::Literal(_) => true,
-			_ => false
-		}
+		matches!(self, ExprToken::Literal(_))
 	}
 
 	pub fn is_number(&self) -> bool {
-		match self {
-			ExprToken::Number(_) => true,
-			_ => false
-		}
+		matches!(self, ExprToken::Number(_))
 	}
 
 	pub fn is_function_name(&self) -> bool {
-		match self {
-			ExprToken::FunctionName(_) => true,
-			_ => false
-		}
+		matches!(self, ExprToken::FunctionName(_))
 	}
 }
 
@@ -222,20 +201,11 @@ macro_rules! from_impl {
 			}
 		}
 
-		impl Into<$struct> for ExprToken {
-			fn into(self) -> $struct {
+		impl Into<Option<$struct>> for ExprToken {
+			fn into(self) -> Option<$struct> {
 				match self {
-					ExprToken::$enum(op) => op,
-					_ => panic!("ExprToken is not an $enum")
-				}
-			}
-		}
-
-		impl Into<$struct> for &ExprToken {
-			fn into(self) -> $struct {
-				match self {
-					ExprToken::$enum(op) => op.clone(),
-					_ => panic!("ExprToken is not an $enum")
+					ExprToken::$enum(op) => Some(op),
+					_ => None
 				}
 			}
 		}

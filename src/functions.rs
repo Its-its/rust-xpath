@@ -72,7 +72,7 @@ impl Function for Contains {
 		let found = self.0.eval(eval)?.into_nodeset()?;
 
 		if let Some(node) = found.into_iter().next() {
-			let node_value = node.value().string()?;
+			let node_value = node.value()?.string()?;
 
 			Ok(Value::Boolean(node_value.contains(value)))
 		} else {
@@ -145,10 +145,9 @@ impl Function for Sum {
 
 		let orig_len = node_set.len();
 
-		let values: Vec<f64> = node_set.nodes.iter()
-			.map(|n| n.value())
-			.filter_map(|v| v.number().ok())
-			.collect();
+		let values = node_set.nodes.iter()
+			.map(|n| n.value().and_then(|v| v.number()))
+			.collect::<Result<Vec<f64>>>()?;
 
 		if orig_len != values.len() {
 			return Err(ValueError::Number.into());

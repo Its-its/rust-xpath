@@ -20,16 +20,16 @@ impl Document {
 		}
 	}
 
-	pub fn evaluate<S: Into<String>>(&self, search: S) -> Option<Value> {
+	pub fn evaluate<S: Into<String>>(&self, search: S) -> Result<Value> {
 		self.evaluate_from(search, self.root.clone())
 	}
 
-	pub fn evaluate_from<S: Into<String>>(&self, search: S, node: Node) -> Option<Value> {
+	pub fn evaluate_from<S: Into<String>>(&self, search: S, node: Node) -> Result<Value> {
 		Factory::new(search, self, node)
 		.produce()
 	}
 
-	pub fn evaluate_steps(&self, steps: Vec<ExprToken>) -> Option<Value> {
+	pub fn evaluate_steps(&self, steps: Vec<ExprToken>) -> Result<Value> {
 		Factory::new_from_steps(steps, self, self.root.clone())
 		.produce()
 	}
@@ -126,7 +126,7 @@ impl<'a> Factory<'a> {
         }
 	}
 
-	pub fn produce(&mut self) -> Option<Value> {
+	pub fn produce(&mut self) -> Result<Value> {
 		self.tokenize();
 
 		if self.error.is_none() {
@@ -140,23 +140,17 @@ impl<'a> Factory<'a> {
 			let mut stepper = Stepper::new(self.token_steps.clone().into_iter().peekable());
 
 			if stepper.has_more_tokens() {
-				match self.parse_expression(&mut stepper) {
-					Ok(expr) => {
-						match expr {
-							Some(e) => {
-								if DEBUG { println!("Parsed: {:#?}", e); }
-								return Some(e.eval(&self.eval).expect("eval"));
-							}
+				let expr = self.parse_expression(&mut stepper)?;
 
-							None => {
-								// Couldn't find it. Invalid xpath.
-								println!("Invalid XPATH");
-							}
-						}
+				match expr {
+					Some(e) => {
+						if DEBUG { println!("Parsed: {:#?}", e); }
+						return e.eval(&self.eval);
 					}
 
-					Err(e) => {
-						eprintln!("Error: {:?}", e);
+					None => {
+						// Couldn't find it. Invalid xpath.
+						return Err(Error::InvalidXpath);
 					}
 				}
 			}
@@ -166,7 +160,7 @@ impl<'a> Factory<'a> {
 			}
 		}
 
-		None
+		Err(Error::UnableToEvaluate)
 	}
 
 
