@@ -117,8 +117,24 @@ impl Function for Name {
 
 
 // String Functions
-// string string(object?)
 
+
+// https://www.w3.org/TR/xpath-functions-31/#func-string
+#[derive(Debug)]
+pub struct ToString(Box<dyn Expression>);
+
+impl Function for ToString {
+	fn exec(&self, eval: &Evaluation) -> Result<Value> {
+		let value = match self.0.eval(eval)? {
+			Value::Boolean(val) => val.to_string(),
+			Value::Number(val) => val.to_string(),
+			Value::String(val) => val,
+			Value::Nodeset(_) => String::new() // TODO
+		};
+
+		Ok(Value::String(value))
+	}
+}
 
 // string concat(string, string, string*)
 #[derive(Debug)]
