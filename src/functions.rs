@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::{Value, Result};
-use crate::result::ValueError;
+use crate::result::{Error, ValueError};
 
 use crate::expressions::Expression;
 use crate::{Evaluation, Nodeset};
@@ -45,10 +45,75 @@ impl Function for Count {
 }
 
 // node-set id(object)
-// string local-name(node-set?)
-// string namespace-uri(node-set?)
-// string name(node-set?)
 
+// string local-name(node-set?)
+#[derive(Debug)]
+pub struct LocalName(Option<Box<dyn Expression>>);
+
+impl Function for LocalName {
+	fn exec(&self, eval: &Evaluation) -> Result<Value> {
+		if let Some(expr) = self.0.as_ref() {
+			let mut nodeset = expr.eval(eval)?.into_iterset()?;
+
+			if let Some(node) = nodeset.next() {
+				let qual = node.name().ok_or_else::<Error, _>(|| ValueError::Nodeset.into())?;
+
+				return Ok(Value::String(qual.local.to_string()));
+			}
+		}
+
+		Ok(Value::String(String::new()))
+	}
+}
+
+
+// string namespace-uri(node-set?)
+#[derive(Debug)]
+pub struct NamespaceUri(Option<Box<dyn Expression>>);
+
+impl Function for NamespaceUri {
+	fn exec(&self, eval: &Evaluation) -> Result<Value> {
+		if let Some(expr) = self.0.as_ref() {
+			let mut nodeset = expr.eval(eval)?.into_iterset()?;
+
+			if let Some(node) = nodeset.next() {
+				let qual = node.name().ok_or_else::<Error, _>(|| ValueError::Nodeset.into())?;
+				return Ok(Value::String(qual.ns.to_string()));
+			}
+		}
+
+		Ok(Value::String(String::new()))
+	}
+}
+
+// string name(node-set?)
+#[derive(Debug)]
+pub struct Name(Option<Box<dyn Expression>>);
+
+impl Function for Name {
+	fn exec(&self, eval: &Evaluation) -> Result<Value> {
+		if let Some(expr) = self.0.as_ref() {
+			let mut nodeset = expr.eval(eval)?.into_iterset()?;
+
+			if let Some(node) = nodeset.next() {
+				let qual = node.name().ok_or_else::<Error, _>(|| ValueError::Nodeset.into())?;
+
+				let value = if let Some(mut prefix) = qual.prefix.map(|s| s.to_string()) {
+					prefix += ":";
+					prefix += &qual.local;
+
+					prefix
+				} else {
+					qual.local.to_string()
+				};
+
+				return Ok(Value::String(value));
+			}
+		}
+
+		Ok(Value::String(String::new()))
+	}
+}
 
 
 // String Functions
@@ -219,7 +284,44 @@ impl Function for StringLength {
 }
 
 // string normalize-space(string?)
+#[derive(Debug)]
+pub struct NormalizeSpace(Option<Box<dyn Expression>>);
 
+impl NormalizeSpace {
+	pub fn new(value: Option<Box<dyn Expression>>) -> Self {
+		Self(value)
+	}
+}
+
+impl Function for NormalizeSpace {
+	fn exec(&self, eval: &Evaluation) -> Result<Value> {
+		match self.0.as_ref() {
+			Some(expr) => {
+				let value = expr.eval(eval)?.get_first_string()?;
+
+				Ok(Value::String(
+					value.trim()
+						.chars()
+						.fold((String::new(), false), |(mut value, mut ignore_spaces), ch| {
+							if ch.is_whitespace() {
+								if !ignore_spaces {
+									value.push(ch);
+									ignore_spaces = true;
+								}
+							} else {
+								value.push(ch);
+								ignore_spaces = false;
+							}
+
+							(value, ignore_spaces)
+						}).0
+				))
+			}
+
+			_ => Ok(Value::String(String::new()))
+		}
+	}
+}
 
 // string translate(string, string, string)
 
