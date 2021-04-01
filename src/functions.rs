@@ -201,7 +201,22 @@ impl Function for Substring {
 }
 
 // number string-length(string?)
+#[derive(Debug)]
+pub struct StringLength(Box<dyn Expression>);
 
+impl StringLength {
+	pub fn new(value: Box<dyn Expression>) -> Self {
+		Self(value)
+	}
+}
+
+impl Function for StringLength {
+	fn exec(&self, eval: &Evaluation) -> Result<Value> {
+		let value = self.0.eval(eval)?.get_first_string()?;
+
+		Ok(Value::Number(value.len() as f64))
+	}
+}
 
 // string normalize-space(string?)
 
