@@ -84,6 +84,22 @@ impl Value {
 			_ => Err(ValueError::String.into())
 		}
 	}
+
+	/// Checks `Value::String` and `Value::Nodeset` for a string value.
+	pub fn get_first_string(self) -> Result<String> {
+		match self {
+			Value::String(v) =>  Ok(v),
+			this => {
+				let mut array = this.vec_string()?;
+
+				if !array.is_empty() {
+					Ok(array.remove(0))
+				} else {
+					Err(ValueError::String.into())
+				}
+			}
+		}
+	}
 }
 
 impl PartialEq for Value {

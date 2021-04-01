@@ -53,43 +53,162 @@ impl Function for Count {
 
 // String Functions
 // string string(object?)
-// string concat(string, string, string*)
-// boolean starts-with(string, string)
 
-// boolean contains(string, string)
+
+// string concat(string, string, string*)
+#[derive(Debug)]
+pub struct Concat(Vec<Box<dyn Expression>>);
+
+impl Concat {
+	pub fn new(expr: Vec<Box<dyn Expression>>) -> Self {
+		Self(expr)
+	}
+}
+
+impl Function for Concat {
+	fn exec(&self, eval: &Evaluation) -> Result<Value> {
+		let mut value = String::new();
+
+		for expr in &self.0 {
+			let value_eval = expr.eval(eval)?;
+
+			value.push_str(&value_eval.get_first_string()?);
+		}
+
+		Ok(Value::String(value))
+	}
+}
+
+// boolean starts-with(string, string)
+#[derive(Debug)]
+pub struct StartsWith(Box<dyn Expression>, Box<dyn Expression>);
+
+impl StartsWith {
+	pub fn new(left: Box<dyn Expression>, right: Box<dyn Expression>) -> Self {
+		Self(left, right)
+	}
+}
+
+impl Function for StartsWith {
+	fn exec(&self, eval: &Evaluation) -> Result<Value> {
+		let left = self.0.eval(eval)?.get_first_string()?;
+		let right = self.1.eval(eval)?.get_first_string()?;
+
+		Ok(Value::Boolean(left.starts_with(&right)))
+	}
+}
+
+// https://www.w3.org/TR/xpath-functions-31/#func-contains
 #[derive(Debug)]
 pub struct Contains(Box<dyn Expression>, Box<dyn Expression>);
 
 impl Contains {
 	pub fn new(left: Box<dyn Expression>, right: Box<dyn Expression>) -> Self {
-		Contains(left, right)
+		Self(left, right)
 	}
 }
 
 impl Function for Contains {
 	fn exec(&self, eval: &Evaluation) -> Result<Value> {
-		let right = self.1.eval(eval)?.into_nodeset()?;
-		let left = self.0.eval(eval)?.into_nodeset()?;
+		let left = self.0.eval(eval)?.get_first_string()?;
+		let right = self.1.eval(eval)?.get_first_string()?;
 
-		match (left.into_iter().next(), right.into_iter().next()) {
-			(Some(left), Some(right)) => {
-				let left_value = left.value()?.string()?;
-				let right_value = left.value()?.string()?;
+		Ok(Value::Boolean(
+			match (left, right) {
+				(left, _) if left.is_empty() => false,
+				(_, right) if right.is_empty() => true,
 
-				Ok(Value::Boolean(left_value.contains(&right_value)))
+				(left, right) => left.contains(&right)
 			}
-
-			_ => Ok(Value::Boolean(false))
-		}
+		))
 	}
 }
 
 // string substring-before(string, string)
+#[derive(Debug)]
+pub struct SubstringBefore(Box<dyn Expression>, Box<dyn Expression>);
+
+impl SubstringBefore {
+	pub fn new(left: Box<dyn Expression>, right: Box<dyn Expression>) -> Self {
+		Self(left, right)
+	}
+}
+
+impl Function for SubstringBefore {
+	fn exec(&self, eval: &Evaluation) -> Result<Value> {
+		let left = self.0.eval(eval)?.get_first_string()?;
+		let right = self.1.eval(eval)?.get_first_string()?;
+
+		if right.is_empty() {
+			Ok(Value::String(String::new()))
+		} else {
+			let start = left.find(&right).unwrap_or_default();
+
+			Ok(Value::String(left.get(0..start).map(|v| v.to_string()).unwrap_or_default()))
+		}
+	}
+}
+
 // string substring-after(string, string)
+#[derive(Debug)]
+pub struct SubstringAfter(Box<dyn Expression>, Box<dyn Expression>);
+
+impl SubstringAfter {
+	pub fn new(left: Box<dyn Expression>, right: Box<dyn Expression>) -> Self {
+		Self(left, right)
+	}
+}
+
+impl Function for SubstringAfter {
+	fn exec(&self, eval: &Evaluation) -> Result<Value> {
+		let left = self.0.eval(eval)?.get_first_string()?;
+		let right = self.1.eval(eval)?.get_first_string()?;
+
+		if right.is_empty() {
+			Ok(Value::String(String::new()))
+		} else {
+			let start = left.find(&right).unwrap_or_default();
+
+			Ok(Value::String(left.get(start + right.len()..).map(|v| v.to_string()).unwrap_or_default()))
+		}
+	}
+}
+
 // string substring(string, number, number?)
+#[derive(Debug)]
+pub struct Substring(Box<dyn Expression>, Value, Option<Value>);
+
+impl Substring {
+	pub fn new(value: Box<dyn Expression>, start: Value, len: Option<Value>) -> Self {
+		Self(value, start, len)
+	}
+}
+
+impl Function for Substring {
+	fn exec(&self, eval: &Evaluation) -> Result<Value> {
+		let value = self.0.eval(eval)?.get_first_string()?;
+
+		let start = self.1.number()?.round().abs() as isize - 1;
+
+		let end = self.2.as_ref().map(|v| v.number()).unwrap_or_else(|| Ok(value.len() as f64))?.round() as isize;
+		let end = start + end;
+
+		let start = if start < 0 { 0 } else { start };
+		let end = if end < 0 { 0 } else { end };
+
+		Ok(Value::String(value.get(start as usize .. end as usize).map(|v| v.to_string()).unwrap_or_default()))
+	}
+}
+
 // number string-length(string?)
+
+
 // string normalize-space(string?)
+
+
 // string translate(string, string, string)
+
+
 
 // Boolean Functions
 // boolean boolean(object)
