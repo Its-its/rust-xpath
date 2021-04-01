@@ -442,75 +442,58 @@ impl<'a> Factory<'a> {
 
 
 		if let Some(func) = self.parse_function_call(step)? {
-			return Ok(Some(Box::new(Function::new(func))));
+			return Ok(Some(Box::new(func)));
 		}
 
 		Ok(None)
 	}
 
 	// Function Calls
-	fn parse_function_call<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> Result<Option<Box<dyn functions::Function>>> {
+	fn parse_function_call<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> Result<Option<Function>> {
 		if step.is_next_token_func(|i| i.is_function_name()) {
 			let fn_name = return_value!(step, ExprToken::FunctionName);
 			step.consume(ExprToken::LeftParen)?;
 
-			match fn_name.as_str() {
-				"last" => {
-					step.consume(ExprToken::RightParen)?;
+			// Function
 
-					Ok(Some(Box::new(functions::Last)))
+			let function: Box<dyn functions::Function> = match fn_name.as_str() {
+				"last" => Box::new(functions::Last),
+				"position" => Box::new(functions::Position),
+				"count" => Box::new(functions::Count),
+				"local-name" => Box::new(functions::LocalName),
+				"namespace-uri" => Box::new(functions::NamespaceUri),
+				"name" => Box::new(functions::Name),
+				"string" => Box::new(functions::ToString),
+				"concat" => Box::new(functions::Concat),
+				"starts-with" => Box::new(functions::StartsWith),
+				"contains" => Box::new(functions::Contains),
+				"substring-before" => Box::new(functions::SubstringBefore),
+				"substring-after" => Box::new(functions::SubstringAfter),
+				"substring" => Box::new(functions::Substring),
+				"string-length" => Box::new(functions::StringLength),
+				"normalize-space" => Box::new(functions::NormalizeSpace),
+				"not" => Box::new(functions::Not),
+				"true" => Box::new(functions::True),
+				"false" => Box::new(functions::False),
+				"sum" => Box::new(functions::Sum),
+				"floor" => Box::new(functions::Floor),
+				"ceiling" => Box::new(functions::Ceiling),
+				"round" => Box::new(functions::Round),
+
+				_ => return Ok(None)
+			};
+
+			let mut args = Vec::new();
+
+			while !step.consume_if_next_token_is(ExprToken::RightParen)? {
+				if let Some(expr) = self.parse_expression(step)? {
+					args.push(expr);
 				}
 
-				"position" => {
-					step.consume(ExprToken::RightParen)?;
-
-					Ok(Some(Box::new(functions::Position)))
-				}
-
-				"true" => {
-					step.consume(ExprToken::RightParen)?;
-
-					Ok(Some(Box::new(functions::True)))
-				}
-
-				"false" => {
-					step.consume(ExprToken::RightParen)?;
-
-					Ok(Some(Box::new(functions::False)))
-				}
-
-				"contains" => {
-					let expr_left = self.parse_expression(step)?;
-
-					step.consume(ExprToken::Comma)?;
-
-					let expr_right = self.parse_expression(step)?;
-
-					step.consume(ExprToken::RightParen)?;
-
-					match (expr_left, expr_right) {
-						(Some(left), Some(right)) => {
-							Ok(Some(Box::new(functions::Contains::new(left, right))))
-						}
-
-						_ => Ok(None)
-					}
-				}
-
-				"not" => {
-					let expr = self.parse_expression(step)?;
-
-					step.consume(ExprToken::RightParen)?;
-
-					if let Some(expr) = expr {
-						Ok(Some(Box::new(functions::Not::new(expr))))
-					} else {
-						Ok(None)
-					}
-				}
-
-				_ => Ok(None)
+				step.consume_if_next_token_is(ExprToken::Comma)?;
 			}
+
+			Ok(Some(Function::new(function, args)))
 		} else {
 			Ok(None)
 		}
@@ -627,8 +610,8 @@ impl<S: Iterator<Item = ExprToken>> Stepper<S> {
 		}
 	}
 
-	pub fn consume_if_next_token_is<T: Into<ExprToken> + Copy>(&mut self, token: T) -> Result<bool> {
-		if self.is_next_token(token) {
+	pub fn consume_if_next_token_is<T: Into<ExprToken> + Clone>(&mut self, token: T) -> Result<bool> {
+		if self.is_next_token(token.clone()) {
 			self.consume(token)?;
 
 			Ok(true)

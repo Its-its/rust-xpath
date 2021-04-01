@@ -27,7 +27,9 @@ pub enum Error {
 	#[error("Unable to Evaluate")]
 	UnableToEvaluate,
 	#[error("Invalid Xpath")]
-	InvalidXpath
+	InvalidXpath,
+	#[error("Missing Function Argument")]
+	MissingFuncArgument
 }
 
 

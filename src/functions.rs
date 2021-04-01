@@ -4,10 +4,31 @@ use crate::{Value, Result};
 use crate::result::{Error, ValueError};
 
 use crate::expressions::Expression;
-use crate::{Evaluation, Nodeset};
+use crate::Evaluation;
 
 pub trait Function: fmt::Debug {
-	fn exec(&self, eval: &Evaluation) -> Result<Value>;
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value>;
+}
+
+
+pub struct Args<'a>(&'a [Box<dyn Expression>]);
+
+impl<'a> Args<'a> {
+	pub fn new(args: &'a [Box<dyn Expression>]) -> Self {
+		Self(args)
+	}
+
+	pub fn get_required(&self, index: usize) -> Result<&dyn Expression> {
+		self.get_optional(index).ok_or(Error::MissingFuncArgument)
+	}
+
+	pub fn get_optional(&self, index: usize) -> Option<&dyn Expression> {
+		self.0.get(index).map(|v| &**v)
+	}
+
+	pub fn array(&self) -> &[Box<dyn Expression>] {
+		self.0
+	}
 }
 
 
@@ -18,7 +39,7 @@ pub trait Function: fmt::Debug {
 pub struct Last;
 
 impl Function for Last {
-	fn exec(&self, eval: &Evaluation) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, _: Args<'a>) -> Result<Value> {
 		Ok(Value::Number(eval.size as f64))
 	}
 }
@@ -29,18 +50,19 @@ impl Function for Last {
 pub struct Position;
 
 impl Function for Position {
-	fn exec(&self, eval: &Evaluation) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, _: Args<'a>) -> Result<Value> {
 		Ok(Value::Number(eval.position as f64))
 	}
 }
 
 // number count(node-set)
 #[derive(Debug, Clone)]
-pub struct Count(Nodeset);
+pub struct Count;
 
 impl Function for Count {
-	fn exec(&self, _context: &Evaluation) -> Result<Value> {
-		Ok(Value::Number(self.0.nodes.len() as f64))
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+		let nodeset = args.get_required(0)?.eval(eval)?.into_nodeset()?;
+		Ok(Value::Number(nodeset.nodes.len() as f64))
 	}
 }
 
@@ -48,11 +70,11 @@ impl Function for Count {
 
 // string local-name(node-set?)
 #[derive(Debug)]
-pub struct LocalName(Option<Box<dyn Expression>>);
+pub struct LocalName;
 
 impl Function for LocalName {
-	fn exec(&self, eval: &Evaluation) -> Result<Value> {
-		if let Some(expr) = self.0.as_ref() {
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+		if let Some(expr) = args.get_optional(0) {
 			let mut nodeset = expr.eval(eval)?.into_iterset()?;
 
 			if let Some(node) = nodeset.next() {
@@ -69,11 +91,11 @@ impl Function for LocalName {
 
 // string namespace-uri(node-set?)
 #[derive(Debug)]
-pub struct NamespaceUri(Option<Box<dyn Expression>>);
+pub struct NamespaceUri;
 
 impl Function for NamespaceUri {
-	fn exec(&self, eval: &Evaluation) -> Result<Value> {
-		if let Some(expr) = self.0.as_ref() {
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+		if let Some(expr) = args.get_optional(0) {
 			let mut nodeset = expr.eval(eval)?.into_iterset()?;
 
 			if let Some(node) = nodeset.next() {
@@ -88,11 +110,11 @@ impl Function for NamespaceUri {
 
 // string name(node-set?)
 #[derive(Debug)]
-pub struct Name(Option<Box<dyn Expression>>);
+pub struct Name;
 
 impl Function for Name {
-	fn exec(&self, eval: &Evaluation) -> Result<Value> {
-		if let Some(expr) = self.0.as_ref() {
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+		if let Some(expr) = args.get_optional(0) {
 			let mut nodeset = expr.eval(eval)?.into_iterset()?;
 
 			if let Some(node) = nodeset.next() {
@@ -121,11 +143,11 @@ impl Function for Name {
 
 // https://www.w3.org/TR/xpath-functions-31/#func-string
 #[derive(Debug)]
-pub struct ToString(Box<dyn Expression>);
+pub struct ToString;
 
 impl Function for ToString {
-	fn exec(&self, eval: &Evaluation) -> Result<Value> {
-		let value = match self.0.eval(eval)? {
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+		let value = match args.get_required(0)?.eval(eval)? {
 			Value::Boolean(val) => val.to_string(),
 			Value::Number(val) => val.to_string(),
 			Value::String(val) => val,
@@ -138,19 +160,13 @@ impl Function for ToString {
 
 // string concat(string, string, string*)
 #[derive(Debug)]
-pub struct Concat(Vec<Box<dyn Expression>>);
-
-impl Concat {
-	pub fn new(expr: Vec<Box<dyn Expression>>) -> Self {
-		Self(expr)
-	}
-}
+pub struct Concat;
 
 impl Function for Concat {
-	fn exec(&self, eval: &Evaluation) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
 		let mut value = String::new();
 
-		for expr in &self.0 {
+		for expr in args.array() {
 			let value_eval = expr.eval(eval)?;
 
 			value.push_str(&value_eval.get_first_string()?);
@@ -162,18 +178,12 @@ impl Function for Concat {
 
 // boolean starts-with(string, string)
 #[derive(Debug)]
-pub struct StartsWith(Box<dyn Expression>, Box<dyn Expression>);
-
-impl StartsWith {
-	pub fn new(left: Box<dyn Expression>, right: Box<dyn Expression>) -> Self {
-		Self(left, right)
-	}
-}
+pub struct StartsWith;
 
 impl Function for StartsWith {
-	fn exec(&self, eval: &Evaluation) -> Result<Value> {
-		let left = self.0.eval(eval)?.get_first_string()?;
-		let right = self.1.eval(eval)?.get_first_string()?;
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+		let left = args.get_required(0)?.eval(eval)?.get_first_string()?;
+		let right = args.get_required(1)?.eval(eval)?.get_first_string()?;
 
 		Ok(Value::Boolean(left.starts_with(&right)))
 	}
@@ -181,18 +191,12 @@ impl Function for StartsWith {
 
 // https://www.w3.org/TR/xpath-functions-31/#func-contains
 #[derive(Debug)]
-pub struct Contains(Box<dyn Expression>, Box<dyn Expression>);
-
-impl Contains {
-	pub fn new(left: Box<dyn Expression>, right: Box<dyn Expression>) -> Self {
-		Self(left, right)
-	}
-}
+pub struct Contains;
 
 impl Function for Contains {
-	fn exec(&self, eval: &Evaluation) -> Result<Value> {
-		let left = self.0.eval(eval)?.get_first_string()?;
-		let right = self.1.eval(eval)?.get_first_string()?;
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+		let left = args.get_required(0)?.eval(eval)?.get_first_string()?;
+		let right = args.get_required(1)?.eval(eval)?.get_first_string()?;
 
 		Ok(Value::Boolean(
 			match (left, right) {
@@ -207,18 +211,13 @@ impl Function for Contains {
 
 // string substring-before(string, string)
 #[derive(Debug)]
-pub struct SubstringBefore(Box<dyn Expression>, Box<dyn Expression>);
+pub struct SubstringBefore;
 
-impl SubstringBefore {
-	pub fn new(left: Box<dyn Expression>, right: Box<dyn Expression>) -> Self {
-		Self(left, right)
-	}
-}
 
 impl Function for SubstringBefore {
-	fn exec(&self, eval: &Evaluation) -> Result<Value> {
-		let left = self.0.eval(eval)?.get_first_string()?;
-		let right = self.1.eval(eval)?.get_first_string()?;
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+		let left = args.get_required(0)?.eval(eval)?.get_first_string()?;
+		let right = args.get_required(1)?.eval(eval)?.get_first_string()?;
 
 		if right.is_empty() {
 			Ok(Value::String(String::new()))
@@ -232,18 +231,12 @@ impl Function for SubstringBefore {
 
 // string substring-after(string, string)
 #[derive(Debug)]
-pub struct SubstringAfter(Box<dyn Expression>, Box<dyn Expression>);
-
-impl SubstringAfter {
-	pub fn new(left: Box<dyn Expression>, right: Box<dyn Expression>) -> Self {
-		Self(left, right)
-	}
-}
+pub struct SubstringAfter;
 
 impl Function for SubstringAfter {
-	fn exec(&self, eval: &Evaluation) -> Result<Value> {
-		let left = self.0.eval(eval)?.get_first_string()?;
-		let right = self.1.eval(eval)?.get_first_string()?;
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+		let left = args.get_required(0)?.eval(eval)?.get_first_string()?;
+		let right = args.get_required(1)?.eval(eval)?.get_first_string()?;
 
 		if right.is_empty() {
 			Ok(Value::String(String::new()))
@@ -257,21 +250,15 @@ impl Function for SubstringAfter {
 
 // string substring(string, number, number?)
 #[derive(Debug)]
-pub struct Substring(Box<dyn Expression>, Value, Option<Value>);
-
-impl Substring {
-	pub fn new(value: Box<dyn Expression>, start: Value, len: Option<Value>) -> Self {
-		Self(value, start, len)
-	}
-}
+pub struct Substring;
 
 impl Function for Substring {
-	fn exec(&self, eval: &Evaluation) -> Result<Value> {
-		let value = self.0.eval(eval)?.get_first_string()?;
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+		let value = args.get_required(0)?.eval(eval)?.get_first_string()?;
 
-		let start = self.1.number()?.round().abs() as isize - 1;
+		let start = args.get_required(1)?.eval(eval)?.number()?.round().abs() as isize - 1;
 
-		let end = self.2.as_ref().map(|v| v.number()).unwrap_or_else(|| Ok(value.len() as f64))?.round() as isize;
+		let end = args.get_optional(2).and_then(|v| v.eval(eval).ok()).map(|v| v.number()).unwrap_or_else(|| Ok(value.len() as f64))?.round() as isize;
 		let end = start + end;
 
 		let start = if start < 0 { 0 } else { start };
@@ -283,35 +270,27 @@ impl Function for Substring {
 
 // number string-length(string?)
 #[derive(Debug)]
-pub struct StringLength(Box<dyn Expression>);
-
-impl StringLength {
-	pub fn new(value: Box<dyn Expression>) -> Self {
-		Self(value)
-	}
-}
+pub struct StringLength;
 
 impl Function for StringLength {
-	fn exec(&self, eval: &Evaluation) -> Result<Value> {
-		let value = self.0.eval(eval)?.get_first_string()?;
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+		if let Some(arg) = args.get_optional(0) {
+			let value = arg.eval(eval)?.get_first_string()?;
 
-		Ok(Value::Number(value.len() as f64))
+			Ok(Value::Number(value.len() as f64))
+		} else {
+			Ok(Value::Number(0.0))
+		}
 	}
 }
 
 // string normalize-space(string?)
 #[derive(Debug)]
-pub struct NormalizeSpace(Option<Box<dyn Expression>>);
-
-impl NormalizeSpace {
-	pub fn new(value: Option<Box<dyn Expression>>) -> Self {
-		Self(value)
-	}
-}
+pub struct NormalizeSpace;
 
 impl Function for NormalizeSpace {
-	fn exec(&self, eval: &Evaluation) -> Result<Value> {
-		match self.0.as_ref() {
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+		match args.get_optional(0) {
 			Some(expr) => {
 				let value = expr.eval(eval)?.get_first_string()?;
 
@@ -348,17 +327,11 @@ impl Function for NormalizeSpace {
 
 // boolean not(boolean)
 #[derive(Debug)]
-pub struct Not(Box<dyn Expression>);
-
-impl Not {
-	pub fn new(value: Box<dyn Expression>) -> Self {
-		Not(value)
-	}
-}
+pub struct Not;
 
 impl Function for Not {
-	fn exec(&self, eval: &Evaluation) -> Result<Value> {
-		let found = self.0.eval(eval)?;
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+		let found = args.get_required(0)?.eval(eval)?;
 		Ok(Value::Boolean(!found.boolean()?))
 	}
 }
@@ -369,7 +342,7 @@ impl Function for Not {
 pub struct True;
 
 impl Function for True {
-	fn exec(&self, _: &Evaluation) -> Result<Value> {
+	fn exec<'a>(&self, _: &Evaluation, _: Args<'a>) -> Result<Value> {
 		Ok(Value::Boolean(true))
 	}
 }
@@ -379,7 +352,7 @@ impl Function for True {
 pub struct False;
 
 impl Function for False {
-	fn exec(&self, _: &Evaluation) -> Result<Value> {
+	fn exec<'a>(&self, _: &Evaluation, _: Args<'a>) -> Result<Value> {
 		Ok(Value::Boolean(false))
 	}
 }
@@ -392,11 +365,11 @@ impl Function for False {
 
 // number sum(node-set)
 #[derive(Debug, Clone)]
-pub struct Sum(Value);
+pub struct Sum;
 
 impl Function for Sum {
-	fn exec(&self, _context: &Evaluation) -> Result<Value> {
-		let node_set = self.0.as_nodeset()?;
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+		let node_set = args.get_required(0)?.eval(eval)?.into_nodeset()?;
 
 		let orig_len = node_set.len();
 
@@ -414,11 +387,11 @@ impl Function for Sum {
 
 // number floor(number)
 #[derive(Debug, Clone)]
-pub struct Floor(Value);
+pub struct Floor;
 
 impl Function for Floor {
-	fn exec(&self, _context: &Evaluation) -> Result<Value> {
-		let val = self.0.number()?;
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+		let val = args.get_required(0)?.eval(eval)?.number()?;
 
 		Ok(Value::Number(val.floor()))
 	}
@@ -426,11 +399,11 @@ impl Function for Floor {
 
 // number ceiling(number)
 #[derive(Debug, Clone)]
-pub struct Ceiling(Value);
+pub struct Ceiling;
 
 impl Function for Ceiling {
-	fn exec(&self, _context: &Evaluation) -> Result<Value> {
-		let val = self.0.number()?;
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+		let val = args.get_required(0)?.eval(eval)?.number()?;
 
 		Ok(Value::Number(val.ceil()))
 	}
@@ -438,11 +411,11 @@ impl Function for Ceiling {
 
 // number round(number)
 #[derive(Debug, Clone)]
-pub struct Round(Value);
+pub struct Round;
 
 impl Function for Round {
-	fn exec(&self, _context: &Evaluation) -> Result<Value> {
-		let val = self.0.number()?;
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+		let val = args.get_required(0)?.eval(eval)?.number()?;
 
 		Ok(Value::Number(val.round()))
 	}

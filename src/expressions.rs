@@ -24,7 +24,7 @@
 
 use std::fmt;
 
-use crate::functions;
+use crate::functions::{self, Args};
 use crate::{DEBUG, Value, Evaluation, Result, AxisName, Nodeset, NodeTest, Node};
 
 pub type CallFunction = fn(ExpressionArg, ExpressionArg) -> ExpressionArg;
@@ -293,16 +293,16 @@ impl Predicate {
 
 
 #[derive(Debug)]
-pub struct Function(Box<dyn functions::Function>);
+pub struct Function(Box<dyn functions::Function>, Vec<ExpressionArg>);
 
 impl Function {
-	pub fn new(inner: Box<dyn functions::Function>) -> Function {
-		Function(inner)
+	pub fn new(inner: Box<dyn functions::Function>, args: Vec<ExpressionArg>) -> Function {
+		Self(inner, args)
 	}
 }
 
 impl Expression for Function {
 	fn eval(&self, eval: &Evaluation) -> Result<Value> {
-		self.0.exec(eval)
+		self.0.exec(eval, Args::new(self.1.as_ref()))
 	}
 }
