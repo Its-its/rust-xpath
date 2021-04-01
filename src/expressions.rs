@@ -227,17 +227,15 @@ impl Step {
 		context: &Evaluation,
 		starting_nodes: Nodeset,
 	) -> Result<Nodeset> {
-		// For every starting node, we collect new nodes based on the
-		// axis and node-test. We evaluate the predicates on each node.
-
-		// This seems like a likely place where we could differ from
-		// the spec, so thorough testing is key.
-
 		let mut unique = Nodeset::new();
 
 		for node in starting_nodes.nodes {
 			let child_context = context.new_evaluation_from(node);
-			let nodes = child_context.find_nodes(&self.axis, self.node_test.as_ref());
+			let mut nodes = child_context.find_nodes(&self.axis, self.node_test.as_ref());
+
+			for predicate in &self.predicates {
+				nodes = predicate.select(&context, nodes)?;
+			}
 
 			unique.extend(nodes);
 		}
@@ -245,10 +243,6 @@ impl Step {
 		if DEBUG && !self.predicates.is_empty() {
 			println!("Pre Predicate:");
 			println!("{:#?}", unique);
-		}
-
-		for predicate in &self.predicates {
-			unique = predicate.select(&context, unique)?;
 		}
 
 		Ok(unique)

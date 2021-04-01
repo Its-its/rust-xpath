@@ -105,6 +105,8 @@ impl Value {
 impl PartialEq for Value {
 	fn eq(&self, other: &Value) -> bool {
 		match (self, other) {
+			(Value::Number(v1), Value::Number(v2)) => v1 == v2,
+
 			// Noteset == String
 			(Value::Nodeset(set), Value::String(value)) |
 			(Value::String(value), Value::Nodeset(set)) => {
