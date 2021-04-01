@@ -133,12 +133,6 @@ impl PartialEq for Value {
 	}
 }
 
-// node-set (an unordered collection of nodes without duplicates)
-// boolean (true or false)
-// number (a floating-point number)
-// string (a sequence of UCS characters)
-
-
 #[derive(Clone)]
 pub struct Attribute {
 	pub parent: WeakNodeHandle,

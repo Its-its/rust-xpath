@@ -49,34 +49,37 @@ impl Function for Count {
 // string namespace-uri(node-set?)
 // string name(node-set?)
 
+
+
 // String Functions
 // string string(object?)
 // string concat(string, string, string*)
 // boolean starts-with(string, string)
 
 // boolean contains(string, string)
-// text() | @class
 #[derive(Debug)]
-pub struct Contains(Box<dyn Expression>, Value);
+pub struct Contains(Box<dyn Expression>, Box<dyn Expression>);
 
 impl Contains {
-	pub fn new(left: Box<dyn Expression>, right: Value) -> Self {
+	pub fn new(left: Box<dyn Expression>, right: Box<dyn Expression>) -> Self {
 		Contains(left, right)
 	}
 }
 
 impl Function for Contains {
 	fn exec(&self, eval: &Evaluation) -> Result<Value> {
-		let value = self.1.as_string()?;
+		let right = self.1.eval(eval)?.into_nodeset()?;
+		let left = self.0.eval(eval)?.into_nodeset()?;
 
-		let found = self.0.eval(eval)?.into_nodeset()?;
+		match (left.into_iter().next(), right.into_iter().next()) {
+			(Some(left), Some(right)) => {
+				let left_value = left.value()?.string()?;
+				let right_value = left.value()?.string()?;
 
-		if let Some(node) = found.into_iter().next() {
-			let node_value = node.value()?.string()?;
+				Ok(Value::Boolean(left_value.contains(&right_value)))
+			}
 
-			Ok(Value::Boolean(node_value.contains(value)))
-		} else {
-			Ok(Value::Boolean(false))
+			_ => Ok(Value::Boolean(false))
 		}
 	}
 }

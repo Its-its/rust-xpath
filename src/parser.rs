@@ -60,10 +60,7 @@ pub static AXES: [Id<AxisName>; 13] = [
 pub static NODE_TYPES: [Id<NodeType>; 4] = [
     ("comment", NodeType::Comment),
     ("text", NodeType::Text),
-    (
-        "processing-instruction",
-        NodeType::ProcessingInstruction(None),
-    ),
+    ("processing-instruction", NodeType::ProcessingInstruction(None)),
     ("node", NodeType::Node),
 ];
 

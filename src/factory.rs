@@ -480,18 +480,20 @@ impl<'a> Factory<'a> {
 				}
 
 				"contains" => {
-					let expr = self.parse_expression(step)?;
+					let expr_left = self.parse_expression(step)?;
 
 					step.consume(ExprToken::Comma)?;
 
-					let value = return_value!(step, ExprToken::Literal);
+					let expr_right = self.parse_expression(step)?;
 
 					step.consume(ExprToken::RightParen)?;
 
-					if let Some(expr) = expr {
-						Ok(Some(Box::new(functions::Contains::new(expr, Value::String(value)))))
-					} else {
-						Ok(None)
+					match (expr_left, expr_right) {
+						(Some(left), Some(right)) => {
+							Ok(Some(Box::new(functions::Contains::new(left, right))))
+						}
+
+						_ => Ok(None)
 					}
 				}
 
