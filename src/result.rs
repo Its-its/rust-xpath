@@ -1,4 +1,4 @@
-use std::fmt;
+use thiserror::Error as ThisError;
 
 use crate::ExprToken;
 
@@ -6,37 +6,28 @@ use crate::ExprToken;
 pub type Result<I> = std::result::Result<I, Error>;
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ThisError)]
 pub enum Error {
+	#[error("Token Error")]
 	Token,
+	#[error("Empty Input")]
 	InputEmpty,
+	#[error("Trailing Slash")]
 	TrailingSlash,
+	#[error("Missing Right Hand Expression")]
 	MissingRightHandExpression,
+	#[error("Unexpected Token {0:?}")]
 	UnexpectedToken(ExprToken),
+	#[error("Invalid Value {0:?}")]
 	InvalidValue(ValueError),
+	#[error("Cannot convert Node into Value")]
 	CannotConvertNodeToValue,
+	#[error("Node did not contain Text")]
 	NodeDidNotContainText,
+	#[error("Unable to Evaluate")]
 	UnableToEvaluate,
+	#[error("Invalid Xpath")]
 	InvalidXpath
-}
-
-impl fmt::Display for Error {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		use Error::*;
-
-		match self {
-			Token => write!(f, "Token Error"),
-			InputEmpty => write!(f, "Empty Input"),
-			TrailingSlash => write!(f, "Trailing Slash"),
-			UnableToEvaluate => write!(f, "Unable to Evaluate"),
-			InvalidXpath => write!(f, "Invalid Xpath"),
-			MissingRightHandExpression => write!(f, "Missing Right Hand Expression"),
-			CannotConvertNodeToValue => write!(f, "Cannot convert Node into Value"),
-			NodeDidNotContainText => write!(f, "Node did not contain Text"),
-			UnexpectedToken(v) => write!(f, "Unexpected Token: {:?}", v),
-			InvalidValue(v) => write!(f, "Invalid Value: {:?}", v),
-		}
-	}
 }
 
 

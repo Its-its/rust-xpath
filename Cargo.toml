@@ -16,3 +16,5 @@ regex = "1.4"
 html5ever = "0.25"
 markup5ever = "0.10"
 markup5ever_rcdom  = "0.1"
+
+thiserror = "1.0"
