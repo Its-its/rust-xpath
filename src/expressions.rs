@@ -24,15 +24,21 @@
 
 use std::fmt;
 
+use markup5ever_rcdom::NodeData;
+
 use crate::functions::{self, Args};
-use crate::{DEBUG, Value, Evaluation, Result, AxisName, Nodeset, NodeTest, Node};
+use crate::{AxisName, DEBUG, Evaluation, Node, NodeTest, Nodeset, Result, Value, result::ValueError};
 
 pub type CallFunction = fn(ExpressionArg, ExpressionArg) -> ExpressionArg;
 pub type ExpressionArg = Box<dyn Expression>;
 
 
 pub trait Expression: fmt::Debug {
-	fn eval(&self, eval: &Evaluation) -> Result<Value>;
+	fn eval(&mut self, eval: &Evaluation) -> Result<Value>;
+
+	fn count(&mut self) -> usize {
+		0
+	}
 }
 
 
@@ -51,7 +57,7 @@ impl Equal {
 }
 
 impl Expression for Equal {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
+	fn eval(&mut self, eval: &Evaluation) -> Result<Value> {
 		let left_value = self.left.eval(eval)?;
 		let right_value = self.right.eval(eval)?;
 
@@ -73,7 +79,7 @@ impl NotEqual {
 }
 
 impl Expression for NotEqual {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
+	fn eval(&mut self, eval: &Evaluation) -> Result<Value> {
 		let left_value = self.left.eval(eval)?;
 		let right_value = self.right.eval(eval)?;
 
@@ -95,7 +101,7 @@ impl And {
 }
 
 impl Expression for And {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
+	fn eval(&mut self, eval: &Evaluation) -> Result<Value> {
 		let left_value = self.left.eval(eval)?;
 		let right_value = self.right.eval(eval)?;
 
@@ -118,7 +124,7 @@ impl Or {
 }
 
 impl Expression for Or {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
+	fn eval(&mut self, eval: &Evaluation) -> Result<Value> {
 		let left_value = self.left.eval(eval)?;
 		let right_value = self.right.eval(eval)?;
 
@@ -138,7 +144,7 @@ impl From<Value> for Literal {
 }
 
 impl Expression for Literal {
-	fn eval(&self, _: &Evaluation) -> Result<Value> {
+	fn eval(&mut self, _: &Evaluation) -> Result<Value> {
 		Ok(self.0.clone())
 	}
 }
@@ -150,7 +156,7 @@ impl Expression for Literal {
 pub struct RootNode;
 
 impl Expression for RootNode {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
+	fn eval(&mut self, eval: &Evaluation) -> Result<Value> {
 		Ok(Value::Nodeset(vec![eval.root().clone()].into()))
 	}
 }
@@ -160,7 +166,7 @@ impl Expression for RootNode {
 pub struct ContextNode;
 
 impl Expression for ContextNode {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
+	fn eval(&mut self, eval: &Evaluation) -> Result<Value> {
 		// TODO: Figure out. Cannot clone an Rc
 		Ok(Value::Nodeset(vec![eval.node.clone()].into()))
 	}
@@ -183,11 +189,11 @@ impl Path {
 }
 
 impl Expression for Path {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
+	fn eval(&mut self, eval: &Evaluation) -> Result<Value> {
 		let result = self.start_pos.eval(eval)?;
 		let mut set = result.into_nodeset()?;
 
-		for step in &self.steps {
+		for step in &mut self.steps {
 			set = step.evaluate(eval, set)?;
 		}
 
@@ -223,7 +229,7 @@ impl Step {
 	}
 
 	fn evaluate(
-		&self,
+		&mut self,
 		context: &Evaluation,
 		starting_nodes: Nodeset,
 	) -> Result<Nodeset> {
@@ -233,7 +239,7 @@ impl Step {
 			let child_context = context.new_evaluation_from(node);
 			let mut nodes = child_context.find_nodes(&self.axis, self.node_test.as_ref());
 
-			for predicate in &self.predicates {
+			for predicate in &mut self.predicates {
 				nodes = predicate.select(&context, nodes)?;
 			}
 
@@ -256,7 +262,7 @@ struct Predicate(ExpressionArg);
 
 impl Predicate {
 	fn select<'c>(
-		&self,
+		&mut self,
 		context: &Evaluation<'c>,
 		nodes: Nodeset,
 	) -> Result<Nodeset> {
@@ -273,7 +279,7 @@ impl Predicate {
 		Ok(found.into())
 	}
 
-	fn matches_eval(&self, context: &Evaluation<'_>) -> Result<bool> {
+	fn matches_eval(&mut self, context: &Evaluation<'_>) -> Result<bool> {
 		let value = self.0.eval(context)?;
 
 		Ok(match value {
@@ -296,7 +302,126 @@ impl Function {
 }
 
 impl Expression for Function {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
-		self.0.exec(eval, Args::new(self.1.as_ref()))
+	fn eval(&mut self, eval: &Evaluation) -> Result<Value> {
+		self.0.exec(eval, Args::new(self.1.as_mut()))
+	}
+}
+
+
+#[derive(Debug, Clone)]
+pub enum PartialValue {
+	Boolean(bool),
+	Number(f64),
+	String(String),
+	Node(Node)
+}
+
+impl PartialValue {
+	pub fn exists(&self) -> bool {
+		match self {
+			Self::Boolean(v) => *v,
+			Self::Number(v) => !v.is_nan(),
+			Self::String(v) => !v.is_empty(),
+			Self::Node(_) => true
+		}
+	}
+
+	pub fn as_node(&self) -> Result<&Node> {
+		match self {
+			Self::Node(s) =>  Ok(s),
+			_ => Err(ValueError::Nodeset.into())
+		}
+	}
+
+	pub fn is_node(&self) -> bool {
+		matches!(self, Self::Node(_))
+	}
+
+	pub fn into_node(self) -> Result<Node> {
+		match self {
+			Self::Node(s) =>  Ok(s),
+			_ => Err(ValueError::Nodeset.into())
+		}
+	}
+
+	pub fn boolean(&self) -> Result<bool> {
+		match self {
+			Self::Boolean(v) =>  Ok(*v),
+			_ => Err(ValueError::Boolean.into())
+		}
+	}
+
+	pub fn number(&self) -> Result<f64> {
+		match self {
+			Self::Number(v) =>  Ok(*v),
+			_ => Err(ValueError::Number.into())
+		}
+	}
+
+	pub fn as_string(&self) -> Result<&String> {
+		match self {
+			Self::String(v) =>  Ok(v),
+			_ => Err(ValueError::String.into())
+		}
+	}
+
+	pub fn string(self) -> Result<String> {
+		match self {
+			Self::String(v) =>  Ok(v),
+			_ => Err(ValueError::String.into())
+		}
+	}
+}
+
+impl Into<Value> for PartialValue {
+	fn into(self) -> Value {
+		match self {
+			Self::Boolean(v) => Value::Boolean(v),
+			Self::Number(v) => Value::Number(v),
+			Self::String(v) => Value::String(v),
+			Self::Node(v) => Value::Nodeset(Nodeset { nodes: vec![v] }),
+		}
+	}
+}
+
+
+impl PartialEq for PartialValue {
+	fn eq(&self, other: &Self) -> bool {
+		match (self, other) {
+			(Self::Number(v1), Self::Number(v2)) => v1 == v2,
+
+			// Noteset == String
+			(Self::Node(node), Self::String(value)) |
+			(Self::String(value), Self::Node(node)) => {
+				// TODO: No.
+				if &format!("{:?}", node) == value {
+					true
+				} else {
+					match node {
+						Node::Attribute(attr) => {
+							attr.value() == value
+						}
+
+						Node::Text(handle) => {
+							let upgrade = handle.upgrade().unwrap();
+							if let NodeData::Text { contents } = &upgrade.data {
+								contents.try_borrow().map(|v| v.as_ref() == value).unwrap_or_default()
+							} else {
+								false
+							}
+						}
+
+						_ => false
+					}
+				}
+			}
+
+			(Self::Node(set1), Self::Node(set2)) => {
+				// TODO: No.
+				format!("{:?}", set1) == format!("{:?}", set2)
+			}
+
+			_ => false
+		}
 	}
 }

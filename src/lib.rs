@@ -1,6 +1,17 @@
 use html5ever::tendril::TendrilSink;
 
 
+
+macro_rules! res_opt_catch {
+	($val:expr) => {
+		match $val? {
+			Some(v) => v,
+			None => return Ok(None)
+		}
+	};
+}
+
+
 pub mod value;
 pub mod result;
 pub mod parser;
@@ -20,7 +31,7 @@ pub use parser::Tokenizer;
 pub use factory::{Factory, Document};
 
 
-pub static DEBUG: bool = false;
+pub static DEBUG: bool = true;
 
 
 pub fn parse_doc<R: std::io::Read>(data: &mut R) -> Document {
@@ -48,7 +59,10 @@ mod tests {
 
 	#[test]
 	fn paths() {
-		// let doc = parse_doc(&mut File::open("./doc/example.html").expect("File::open"));
+		let doc = parse_doc(&mut File::open("./doc/example.html").expect("File::open"));
+
+		let mut factory = Factory::new("//head/title", &doc, doc.root.clone());
+		println!("{:?}", factory.produce().expect("prod").collect_values());
 
 		println!("Location Paths (Unabbreviated Syntax)");
 		// assert_eq!(doc.evaluate("//head/title"), Ok(Value::Nodeset(vec![].into()))); // selects the document root (which is always the parent of the document element)

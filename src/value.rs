@@ -6,7 +6,7 @@ use markup5ever::{Attribute as DomAttribute, QualName};
 use markup5ever_rcdom::{NodeData, Handle as NodeHandle, WeakHandle as WeakNodeHandle, SerializableHandle};
 use html5ever::serialize;
 
-use crate::{Document, Error};
+use crate::{Document, Error, factory::ProduceIter};
 use crate::result::{Result, ValueError};
 
 #[derive(Debug, Clone)]
@@ -403,7 +403,7 @@ impl Node {
 	}
 
 
-	pub fn evaluate_from<S: Into<String>>(&self, search: S, doc: &Document) -> Result<Value> {
+	pub fn evaluate_from<'a, S: Into<String>>(&self, search: S, doc: &'a Document) -> Result<ProduceIter<'a>> {
 		doc.evaluate_from(search, self.clone())
 	}
 }

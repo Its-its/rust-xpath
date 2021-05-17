@@ -1,14 +1,48 @@
 
 use std::iter::Peekable;
 
-use crate::{DEBUG, Tokenizer, Evaluation, Node, ExprToken, Operator, Error, Result, Value, NodeTest, NodeType, PrincipalNodeType, AxisName};
+use crate::{AxisName, DEBUG, Error, Evaluation, ExprToken, Node, NodeTest, NodeType, Nodeset, Operator, PrincipalNodeType, Result, Tokenizer, Value, expressions::PartialValue};
 use crate::expressions::{ExpressionArg, ContextNode, RootNode, Path, Step, Literal, Equal, NotEqual, And, Or, Function};
 use crate::nodetest;
 use crate::functions;
 
 type ExpressionResult = Result<Option<ExpressionArg>>;
 
-#[derive(Clone)]
+
+// #[derive(Debug)]
+pub struct ProduceIter<'a> {
+	eval: Evaluation<'a>,
+	expr: ExpressionArg
+}
+
+impl<'a> ProduceIter<'a> {
+	pub fn collect_values(mut self) -> Option<Value> {
+		let arr = self.collect::<Vec<_>>();
+
+		println!("{:#?}", arr);
+
+		None
+
+		// if arr.is_empty() {
+		// 	None
+		// } else if arr[0].as_nodeset().is_ok() {
+		// 	// Some(Value::Nodeset(Nodeset::from(arr.into_iter().map(|v| v.into_node()).collect::<Result<Vec<_>>>().ok()?)))
+		// } else {
+		// 	Some(arr[0].into())
+		// }
+	}
+}
+
+impl<'a> Iterator for ProduceIter<'a> {
+	type Item = Value;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.expr.eval(&self.eval).ok()
+	}
+}
+
+
+#[derive(Debug, Clone)]
 pub struct Document {
 	pub root: Node
 }
@@ -20,18 +54,16 @@ impl Document {
 		}
 	}
 
-	pub fn evaluate<S: Into<String>>(&self, search: S) -> Result<Value> {
+	pub fn evaluate<S: Into<String>>(&self, search: S) -> Result<ProduceIter> {
 		self.evaluate_from(search, self.root.clone())
 	}
 
-	pub fn evaluate_from<S: Into<String>>(&self, search: S, node: Node) -> Result<Value> {
-		Factory::new(search, self, node)
-		.produce()
+	pub fn evaluate_from<S: Into<String>>(&self, search: S, node: Node) -> Result<ProduceIter> {
+		Factory::new(search, self, node).produce()
 	}
 
-	pub fn evaluate_steps(&self, steps: Vec<ExprToken>) -> Result<Value> {
-		Factory::new_from_steps(steps, self, self.root.clone())
-		.produce()
+	pub fn evaluate_steps(&self, steps: Vec<ExprToken>) -> Result<ProduceIter> {
+		Factory::new_from_steps(steps, self, self.root.clone()).produce()
 	}
 }
 
@@ -47,15 +79,15 @@ macro_rules! return_value {
 	}};
 }
 
-pub struct Factory<'a> {
-	eval: Evaluation<'a>,
+pub struct Factory<'eval> {
+	eval: Evaluation<'eval>,
 	tokenizer: Tokenizer,
 	token_steps: Vec<ExprToken>,
 	error: Option<Error>
 }
 
-impl<'a> Factory<'a> {
-	pub fn new<S: Into<String>>(query: S, document: &'a Document, node: Node) -> Self {
+impl<'eval, 'b: 'eval> Factory<'eval> {
+	pub fn new<S: Into<String>>(query: S, document: &'eval Document, node: Node) -> Self {
 		Factory {
 			eval: Evaluation::new(node, document),
 			tokenizer: Tokenizer::new(query),
@@ -64,7 +96,7 @@ impl<'a> Factory<'a> {
 		}
 	}
 
-	pub fn new_from_steps(steps: Vec<ExprToken>, document: &'a Document, node: Node) -> Self {
+	pub fn new_from_steps(steps: Vec<ExprToken>, document: &'eval Document, node: Node) -> Self {
 		Factory {
 			eval: Evaluation::new(node, document),
 			tokenizer: Tokenizer::new(""),
@@ -126,7 +158,7 @@ impl<'a> Factory<'a> {
         }
 	}
 
-	pub fn produce(&mut self) -> Result<Value> {
+	pub fn produce(mut self) -> Result<ProduceIter<'eval>> {
 		self.tokenize();
 
 		if self.error.is_none() {
@@ -143,9 +175,9 @@ impl<'a> Factory<'a> {
 				let expr = self.parse_expression(&mut stepper)?;
 
 				match expr {
-					Some(e) => {
-						if DEBUG { println!("Parsed: {:#?}", e); }
-						return e.eval(&self.eval);
+					Some(expr) => {
+						// if DEBUG { println!("Parsed: {:#?}", expr); }
+						return Ok(ProduceIter::<'eval> { expr, eval: self.eval });
 					}
 
 					None => {
@@ -172,7 +204,7 @@ impl<'a> Factory<'a> {
 	}
 
 	// OrExpr				::= AndExpr | Self 'or' AndExpr
-	fn parse_or_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
+	fn parse_or_expression<S: Iterator<Item = ExprToken>>(&'b self, step: &mut Stepper<S>) -> ExpressionResult {
 		let left_expr = self.parse_and_expression(step)?;
 
 		// Self 'or' AndExpr

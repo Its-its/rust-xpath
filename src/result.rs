@@ -6,7 +6,7 @@ use crate::ExprToken;
 pub type Result<I> = std::result::Result<I, Error>;
 
 
-#[derive(Debug, Clone, ThisError)]
+#[derive(Debug, Clone, PartialEq, ThisError)]
 pub enum Error {
 	#[error("Token Error")]
 	Token,
@@ -39,8 +39,9 @@ impl From<ValueError> for Error {
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ValueError {
+	None,
 	Boolean,
 	Number,
 	String,

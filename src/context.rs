@@ -3,7 +3,7 @@
 use crate::{Document, Node, Nodeset, AxisName, NodeTest};
 use crate::value;
 
-
+#[derive(Debug)]
 pub struct Evaluation<'a> {
 	pub document: &'a Document,
 	pub node: Node,
@@ -168,6 +168,15 @@ impl<'a> Evaluation<'a> {
 			node,
 			position: 1,
 			size: 1
+		}
+	}
+
+	pub fn new_evaluation_from_opts(&'a self, node: Node, position: usize, size: usize) -> Self {
+		Self {
+			document: self.document,
+			node,
+			position,
+			size
 		}
 	}
 
