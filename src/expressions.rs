@@ -193,6 +193,7 @@ impl Expression for Path {
 		let result = self.start_pos.eval(eval)?;
 		let mut set = result.into_nodeset()?;
 
+		// 1st. We evaluate a set of nodes and step for each each one.
 		for step in &mut self.steps {
 			set = step.evaluate(eval, set)?;
 		}
@@ -235,10 +236,13 @@ impl Step {
 	) -> Result<Nodeset> {
 		let mut unique = Nodeset::new();
 
+		// 2nd. The each Node has a Evaluation assigned to it and we check if it has the next step in it.
 		for node in starting_nodes.nodes {
 			let child_context = context.new_evaluation_from(node);
+
 			let mut nodes = child_context.find_nodes(&self.axis, self.node_test.as_ref());
 
+			// 3rd. Predicate check on the found Node(s)
 			for predicate in &mut self.predicates {
 				nodes = predicate.select(&context, nodes)?;
 			}

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::{Result, Value, expressions::PartialValue};
+use crate::{Result, Value};
 use crate::result::{Error, ValueError};
 
 use crate::expressions::Expression;
@@ -14,7 +14,7 @@ pub trait Function: fmt::Debug {
 pub struct Args<'a>(&'a mut [Box<dyn Expression>]);
 
 impl<'a> Args<'a> {
-	pub fn new(mut args: &'a mut [Box<dyn Expression>]) -> Self {
+	pub fn new(args: &'a mut [Box<dyn Expression>]) -> Self {
 		Self(args)
 	}
 
@@ -61,7 +61,7 @@ pub struct Count;
 
 impl Function for Count {
 	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let len = args.get_required(0)?.count();
+		let len = args.get_required(0)?.eval(eval)?.into_nodeset()?.len();
 		Ok(Value::Number(len as f64))
 	}
 }
@@ -145,7 +145,7 @@ impl Function for ToString {
 			Value::Boolean(val) => val.to_string(),
 			Value::Number(val) => val.to_string(),
 			Value::String(val) => val,
-			Value::Nodeset(n) => String::new() //format!("{:?}", n) // TODO
+			Value::Nodeset(_) => String::new() //format!("{:?}", n) // TODO
 		};
 
 		Ok(Value::String(value))

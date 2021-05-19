@@ -488,11 +488,12 @@ pub fn compare_weak_nodes(left: &WeakNodeHandle, right: &WeakNodeHandle) -> bool
 	compare_nodes(&left_upgrade, &right_upgrade)
 }
 
-
+/// Returns children in current parent AFTER 'self.node'.
 pub fn following_nodes_from_parent(node: &Node) -> Vec<Node> {
 	find_nodes_from_parent(node, |child_pos, node_pos| child_pos > node_pos)
 }
 
+/// Returns children in current parent BEFORE 'self.node'.
 pub fn preceding_nodes_from_parent(node: &Node) -> Vec<Node> {
 	find_nodes_from_parent(node, |child_pos, node_pos| child_pos < node_pos)
 }
