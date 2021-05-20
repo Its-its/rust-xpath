@@ -1,7 +1,7 @@
 
 use std::iter::Peekable;
 
-use crate::{AxisName, DEBUG, Error, Evaluation, ExprToken, Node, NodeTest, NodeType, Nodeset, Operator, PrincipalNodeType, Result, Tokenizer, Value, expressions::PartialValue};
+use crate::{AxisName, DEBUG, Error, Evaluation, ExprToken, Node, NodeTest, NodeType, Nodeset, Operator, PrincipalNodeType, Result, Tokenizer, Value, value::PartialValue};
 use crate::expressions::{ExpressionArg, ContextNode, RootNode, Path, Step, Literal, Equal, NotEqual, And, Or, Function};
 use crate::nodetest;
 use crate::functions;
@@ -16,28 +16,22 @@ pub struct ProduceIter<'a> {
 }
 
 impl<'a> ProduceIter<'a> {
-	pub fn collect_values(mut self) -> Option<Value> {
-		let arr = self.collect::<Vec<_>>();
-
-		println!("{:#?}", arr);
-
-		None
-
-		// if arr.is_empty() {
-		// 	None
-		// } else if arr[0].as_nodeset().is_ok() {
-		// 	// Some(Value::Nodeset(Nodeset::from(arr.into_iter().map(|v| v.into_node()).collect::<Result<Vec<_>>>().ok()?)))
-		// } else {
-		// 	Some(arr[0].into())
-		// }
+	pub fn collect_nodes(mut self) -> Result<Value> {
+		Ok(Value::Nodeset(self.try_fold::<_, _, Result<Nodeset>>(
+			Nodeset::new(),
+			|mut set, v| {
+				set.add_node(v.into_node()?);
+				Ok(set)
+			}
+		)?))
 	}
 }
 
 impl<'a> Iterator for ProduceIter<'a> {
-	type Item = Value;
+	type Item = PartialValue;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		self.expr.eval(&self.eval).ok()
+		self.expr.next_eval(&self.eval).ok().flatten()
 	}
 }
 
@@ -364,11 +358,11 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 	}
 
 	// AbbreviatedRelativeLocationPath ::= RelativeLocationPath '//' Step
-	fn parse_abbreviated_relative_location_path<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		// self.parse_relative_location_path(step)
+	// fn parse_abbreviated_relative_location_path<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
+	// 	// self.parse_relative_location_path(step)
 
-		Ok(None)
-	}
+	// 	Ok(None)
+	// }
 
 	fn parse_location_path_raw<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>, start_point: ExpressionArg) -> ExpressionResult {
 		match self.parse_step(step)? {
@@ -463,13 +457,13 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 		// self.parse_string_literal(step)
 		if step.is_next_token_func(|i| i.is_literal()) {
 			let value = return_value!(step, ExprToken::Literal);
-			return Ok(Some(Box::new(Literal::from(Value::String(value)))));
+			return Ok(Some(Box::new(Literal::from(PartialValue::String(value)))));
 		}
 
 		// self.parse_numeric_literal(step)
 		if step.is_next_token_func(|i| i.is_number()) {
 			let value = return_value!(step, ExprToken::Number);
-			return Ok(Some(Box::new(Literal::from(Value::Number(value)))));
+			return Ok(Some(Box::new(Literal::from(PartialValue::Number(value)))));
 		}
 
 

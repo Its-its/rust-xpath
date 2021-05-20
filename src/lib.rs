@@ -24,7 +24,7 @@ pub mod nodetest;
 
 pub use nodetest::{NodeTest, NameTest};
 pub use result::{Result, Error};
-pub use value::{Value, Node, Nodeset};
+pub use value::{PartialValue, Value, Node, Nodeset};
 pub use tokens::{ExprToken, AxisName, NodeType, Operator, PrincipalNodeType};
 pub use context::Evaluation;
 pub use parser::Tokenizer;
@@ -61,8 +61,8 @@ mod tests {
 	fn paths() {
 		let doc = parse_doc(&mut File::open("./doc/example.html").expect("File::open"));
 
-		let mut factory = Factory::new("//head/title", &doc, doc.root.clone());
-		println!("{:?}", factory.produce().expect("prod").collect_values());
+		let factory = Factory::new("//head/title", &doc, doc.root.clone());
+		println!("{:?}", factory.produce().expect("prod").collect_nodes());
 
 		println!("Location Paths (Unabbreviated Syntax)");
 		// assert_eq!(doc.evaluate("//head/title"), Ok(Value::Nodeset(vec![].into()))); // selects the document root (which is always the parent of the document element)

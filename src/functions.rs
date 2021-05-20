@@ -1,13 +1,14 @@
 use std::fmt;
 
-use crate::{Result, Value};
+use crate::Result;
 use crate::result::{Error, ValueError};
+use crate::value::PartialValue;
 
 use crate::expressions::Expression;
 use crate::Evaluation;
 
 pub trait Function: fmt::Debug {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value>;
+	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<PartialValue>;
 }
 
 
@@ -39,8 +40,8 @@ impl<'a> Args<'a> {
 pub struct Last;
 
 impl Function for Last {
-	fn exec<'a>(&self, eval: &Evaluation, _: Args<'a>) -> Result<Value> {
-		Ok(Value::Number(eval.size as f64))
+	fn exec<'a>(&self, eval: &Evaluation, _: Args<'a>) -> Result<PartialValue> {
+		Ok(PartialValue::Number(eval.size as f64))
 	}
 }
 
@@ -50,8 +51,8 @@ impl Function for Last {
 pub struct Position;
 
 impl Function for Position {
-	fn exec<'a>(&self, eval: &Evaluation, _: Args<'a>) -> Result<Value> {
-		Ok(Value::Number(eval.position as f64))
+	fn exec<'a>(&self, eval: &Evaluation, _: Args<'a>) -> Result<PartialValue> {
+		Ok(PartialValue::Number(eval.position as f64))
 	}
 }
 
@@ -60,9 +61,9 @@ impl Function for Position {
 pub struct Count;
 
 impl Function for Count {
-	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let len = args.get_required(0)?.eval(eval)?.into_nodeset()?.len();
-		Ok(Value::Number(len as f64))
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<PartialValue> {
+		let len = args.get_required(0)?.count(eval)?;
+		Ok(PartialValue::Number(len as f64))
 	}
 }
 
@@ -73,16 +74,17 @@ impl Function for Count {
 pub struct LocalName;
 
 impl Function for LocalName {
-	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<PartialValue> {
 		if let Some(expr) = args.get_optional(0) {
-			if let Some(node) = expr.eval(eval)?.into_nodeset()?.into_iter().next() {
-				let qual = node.name().ok_or_else::<Error, _>(|| ValueError::Nodeset.into())?;
+			let value = expr.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+			let node = value.into_node()?;
 
-				return Ok(Value::String(qual.local.to_string()));
-			}
+			let qual = node.name().ok_or_else::<Error, _>(|| ValueError::Nodeset.into())?;
+
+			Ok(PartialValue::String(qual.local.to_string()))
+		} else {
+			Ok(PartialValue::String(String::new()))
 		}
-
-		Ok(Value::String(String::new()))
 	}
 }
 
@@ -92,15 +94,17 @@ impl Function for LocalName {
 pub struct NamespaceUri;
 
 impl Function for NamespaceUri {
-	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<PartialValue> {
 		if let Some(expr) = args.get_optional(0) {
-			if let Some(node) = expr.eval(eval)?.into_nodeset()?.into_iter().next() {
-				let qual = node.name().ok_or_else::<Error, _>(|| ValueError::Nodeset.into())?;
-				return Ok(Value::String(qual.ns.to_string()));
-			}
-		}
+			let value = expr.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+			let node = value.into_node()?;
 
-		Ok(Value::String(String::new()))
+			let qual = node.name().ok_or_else::<Error, _>(|| ValueError::Nodeset.into())?;
+
+			Ok(PartialValue::String(qual.ns.to_string()))
+		} else {
+			Ok(PartialValue::String(String::new()))
+		}
 	}
 }
 
@@ -109,25 +113,26 @@ impl Function for NamespaceUri {
 pub struct Name;
 
 impl Function for Name {
-	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<PartialValue> {
 		if let Some(expr) = args.get_optional(0) {
-			if let Some(node) = expr.eval(eval)?.into_nodeset()?.into_iter().next() {
-				let qual = node.name().ok_or_else::<Error, _>(|| ValueError::Nodeset.into())?;
+			let value = expr.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+			let node = value.into_node()?;
 
-				let value = if let Some(mut prefix) = qual.prefix.map(|s| s.to_string()) {
-					prefix += ":";
-					prefix += &qual.local;
+			let qual = node.name().ok_or_else::<Error, _>(|| ValueError::Nodeset.into())?;
 
-					prefix
-				} else {
-					qual.local.to_string()
-				};
+			let value = if let Some(mut prefix) = qual.prefix.map(|s| s.to_string()) {
+				prefix += ":";
+				prefix += &qual.local;
 
-				return Ok(Value::String(value));
-			}
+				prefix
+			} else {
+				qual.local.to_string()
+			};
+
+			Ok(PartialValue::String(value))
+		} else {
+			Ok(PartialValue::String(String::new()))
 		}
-
-		Ok(Value::String(String::new()))
 	}
 }
 
@@ -140,15 +145,15 @@ impl Function for Name {
 pub struct ToString;
 
 impl Function for ToString {
-	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let value = match args.get_required(0)?.eval(eval)? {
-			Value::Boolean(val) => val.to_string(),
-			Value::Number(val) => val.to_string(),
-			Value::String(val) => val,
-			Value::Nodeset(_) => String::new() //format!("{:?}", n) // TODO
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<PartialValue> {
+		let value = match args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)? {
+			PartialValue::Boolean(val) => val.to_string(),
+			PartialValue::Number(val) => val.to_string(),
+			PartialValue::String(val) => val,
+			PartialValue::Node(n) => format!("{:?}", n) // TODO
 		};
 
-		Ok(Value::String(value))
+		Ok(PartialValue::String(value))
 	}
 }
 
@@ -157,16 +162,20 @@ impl Function for ToString {
 pub struct Concat;
 
 impl Function for Concat {
-	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let mut value = String::new();
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<PartialValue> {
+		let mut concat_value = String::new();
 
 		for expr in args.as_array() {
-			let value_eval = expr.eval(eval)?;
+			let value_eval = expr.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
-			value.push_str(&value_eval.get_first_string()?);
+			let node = value_eval.into_node()?;
+
+			let string_value = node.get_string_value()?;
+
+			concat_value.push_str(&string_value);
 		}
 
-		Ok(Value::String(value))
+		Ok(PartialValue::String(concat_value))
 	}
 }
 
@@ -175,11 +184,17 @@ impl Function for Concat {
 pub struct StartsWith;
 
 impl Function for StartsWith {
-	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let left = args.get_required(0)?.eval(eval)?.get_first_string()?;
-		let right = args.get_required(1)?.eval(eval)?.get_first_string()?;
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<PartialValue> {
+		let left = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+		let right = args.get_required(1)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
-		Ok(Value::Boolean(left.starts_with(&right)))
+		let left_node = left.into_node()?;
+		let right_node = right.into_node()?;
+
+		let left_value = left_node.get_string_value()?;
+		let right_value = right_node.get_string_value()?;
+
+		Ok(PartialValue::Boolean(left_value.starts_with(&right_value)))
 	}
 }
 
@@ -188,12 +203,18 @@ impl Function for StartsWith {
 pub struct Contains;
 
 impl Function for Contains {
-	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let left = args.get_required(0)?.eval(eval)?.get_first_string()?;
-		let right = args.get_required(1)?.eval(eval)?.get_first_string()?;
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<PartialValue> {
+		let left = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+		let right = args.get_required(1)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
-		Ok(Value::Boolean(
-			match (left, right) {
+		let left_node = left.into_node()?;
+		let right_node = right.into_node()?;
+
+		let left_value = left_node.get_string_value()?;
+		let right_value = right_node.get_string_value()?;
+
+		Ok(PartialValue::Boolean(
+			match (left_value, right_value) {
 				(left, _) if left.is_empty() => false,
 				(_, right) if right.is_empty() => true,
 
@@ -209,16 +230,23 @@ pub struct SubstringBefore;
 
 
 impl Function for SubstringBefore {
-	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let left = args.get_required(0)?.eval(eval)?.get_first_string()?;
-		let right = args.get_required(1)?.eval(eval)?.get_first_string()?;
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<PartialValue> {
+		let left = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+		let right = args.get_required(1)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
-		if right.is_empty() {
-			Ok(Value::String(String::new()))
+		let left_node = left.into_node()?;
+		let right_node = right.into_node()?;
+
+		let left_value = left_node.get_string_value()?;
+		let right_value = right_node.get_string_value()?;
+
+
+		if right_value.is_empty() {
+			Ok(PartialValue::String(String::new()))
 		} else {
-			let start = left.find(&right).unwrap_or_default();
+			let start = left_value.find(&right_value).unwrap_or_default();
 
-			Ok(Value::String(left.get(0..start).map(|v| v.to_string()).unwrap_or_default()))
+			Ok(PartialValue::String(left_value.get(0..start).map(|v| v.to_string()).unwrap_or_default()))
 		}
 	}
 }
@@ -228,16 +256,23 @@ impl Function for SubstringBefore {
 pub struct SubstringAfter;
 
 impl Function for SubstringAfter {
-	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let left = args.get_required(0)?.eval(eval)?.get_first_string()?;
-		let right = args.get_required(1)?.eval(eval)?.get_first_string()?;
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<PartialValue> {
+		let left = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+		let right = args.get_required(1)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
-		if right.is_empty() {
-			Ok(Value::String(String::new()))
+		let left_node = left.into_node()?;
+		let right_node = right.into_node()?;
+
+		let left_value = left_node.get_string_value()?;
+		let right_value = right_node.get_string_value()?;
+
+
+		if right_value.is_empty() {
+			Ok(PartialValue::String(String::new()))
 		} else {
-			let start = left.find(&right).unwrap_or_default();
+			let start = left_value.find(&right_value).unwrap_or_default();
 
-			Ok(Value::String(left.get(start + right.len()..).map(|v| v.to_string()).unwrap_or_default()))
+			Ok(PartialValue::String(left_value.get(start + right_value.len()..).map(|v| v.to_string()).unwrap_or_default()))
 		}
 	}
 }
@@ -247,18 +282,29 @@ impl Function for SubstringAfter {
 pub struct Substring;
 
 impl Function for Substring {
-	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let value = args.get_required(0)?.eval(eval)?.get_first_string()?;
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<PartialValue> {
+		let value_0 = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+		let value_1 = args.get_required(1)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
-		let start = args.get_required(1)?.eval(eval)?.number()?.round().abs() as isize - 1;
+		let node = value_0.into_node()?;
 
-		let end = args.get_optional(2).and_then(|v| v.eval(eval).ok()).map(|v| v.number()).unwrap_or_else(|| Ok(value.len() as f64))?.round() as isize;
+		let value_str = node.get_string_value()?;
+
+
+		let start = value_1.as_number()?.round().abs() as isize - 1;
+
+		let end = args.get_optional(2)
+			.and_then(|v| v.next_eval(eval).ok().flatten())
+			.map(|v| v.as_number())
+			.unwrap_or_else(|| Ok(value_str.len() as f64))?
+			.round() as isize;
+
 		let end = start + end;
 
 		let start = if start < 0 { 0 } else { start };
 		let end = if end < 0 { 0 } else { end };
 
-		Ok(Value::String(value.get(start as usize .. end as usize).map(|v| v.to_string()).unwrap_or_default()))
+		Ok(PartialValue::String(value_str.get(start as usize .. end as usize).map(|v| v.to_string()).unwrap_or_default()))
 	}
 }
 
@@ -267,13 +313,17 @@ impl Function for Substring {
 pub struct StringLength;
 
 impl Function for StringLength {
-	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<PartialValue> {
 		if let Some(arg) = args.get_optional(0) {
-			let value = arg.eval(eval)?.get_first_string()?;
+			let value = arg.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
-			Ok(Value::Number(value.len() as f64))
+			let node = value.into_node()?;
+
+			let value_str = node.get_string_value()?;
+
+			Ok(PartialValue::Number(value_str.len() as f64))
 		} else {
-			Ok(Value::Number(0.0))
+			Ok(PartialValue::Number(0.0))
 		}
 	}
 }
@@ -283,13 +333,17 @@ impl Function for StringLength {
 pub struct NormalizeSpace;
 
 impl Function for NormalizeSpace {
-	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<PartialValue> {
 		match args.get_optional(0) {
 			Some(expr) => {
-				let value = expr.eval(eval)?.get_first_string()?;
+				let value = expr.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
-				Ok(Value::String(
-					value.trim()
+				let node = value.into_node()?;
+
+				let value_str = node.get_string_value()?;
+
+				Ok(PartialValue::String(
+					value_str.trim()
 						.chars()
 						.fold((String::new(), false), |(mut value, mut ignore_spaces), ch| {
 							if ch.is_whitespace() {
@@ -307,7 +361,7 @@ impl Function for NormalizeSpace {
 				))
 			}
 
-			_ => Ok(Value::String(String::new()))
+			_ => Ok(PartialValue::String(String::new()))
 		}
 	}
 }
@@ -324,9 +378,9 @@ impl Function for NormalizeSpace {
 pub struct Not;
 
 impl Function for Not {
-	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let found = args.get_required(0)?.eval(eval)?;
-		Ok(Value::Boolean(!found.boolean()?))
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<PartialValue> {
+		let found = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+		Ok(PartialValue::Boolean(!found.as_boolean()?))
 	}
 }
 
@@ -336,8 +390,8 @@ impl Function for Not {
 pub struct True;
 
 impl Function for True {
-	fn exec<'a>(&self, _: &Evaluation, _: Args<'a>) -> Result<Value> {
-		Ok(Value::Boolean(true))
+	fn exec<'a>(&self, _: &Evaluation, _: Args<'a>) -> Result<PartialValue> {
+		Ok(PartialValue::Boolean(true))
 	}
 }
 
@@ -346,8 +400,8 @@ impl Function for True {
 pub struct False;
 
 impl Function for False {
-	fn exec<'a>(&self, _: &Evaluation, _: Args<'a>) -> Result<Value> {
-		Ok(Value::Boolean(false))
+	fn exec<'a>(&self, _: &Evaluation, _: Args<'a>) -> Result<PartialValue> {
+		Ok(PartialValue::Boolean(false))
 	}
 }
 
@@ -362,20 +416,25 @@ impl Function for False {
 pub struct Sum;
 
 impl Function for Sum {
-	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let node_set = args.get_required(0)?.eval(eval)?.into_nodeset()?;
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<PartialValue> {
+		let values = args.get_required(0)?.collect(eval)?;
 
-		let orig_len = node_set.len();
+		let orig_len = values.len();
 
-		let values = node_set.nodes.iter()
-			.map(|n| n.value().and_then(|v| v.number()))
+		let values = values.into_iter()
+			.map(|n| {
+				let node = n.into_node()?;
+				let value = node.value()?;
+
+				value.number()
+			})
 			.collect::<Result<Vec<f64>>>()?;
 
 		if orig_len != values.len() {
 			return Err(ValueError::Number.into());
 		}
 
-		Ok(Value::Number(values.into_iter().sum()))
+		Ok(PartialValue::Number(values.into_iter().sum()))
 	}
 }
 
@@ -384,10 +443,12 @@ impl Function for Sum {
 pub struct Floor;
 
 impl Function for Floor {
-	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let val = args.get_required(0)?.eval(eval)?.number()?;
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<PartialValue> {
+		let val = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
-		Ok(Value::Number(val.floor()))
+		let val = val.as_number()?;
+
+		Ok(PartialValue::Number(val.floor()))
 	}
 }
 
@@ -396,10 +457,12 @@ impl Function for Floor {
 pub struct Ceiling;
 
 impl Function for Ceiling {
-	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let val = args.get_required(0)?.eval(eval)?.number()?;
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<PartialValue> {
+		let val = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
-		Ok(Value::Number(val.ceil()))
+		let val = val.as_number()?;
+
+		Ok(PartialValue::Number(val.ceil()))
 	}
 }
 
@@ -408,9 +471,11 @@ impl Function for Ceiling {
 pub struct Round;
 
 impl Function for Round {
-	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let val = args.get_required(0)?.eval(eval)?.number()?;
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<PartialValue> {
+		let val = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
-		Ok(Value::Number(val.round()))
+		let val = val.as_number()?;
+
+		Ok(PartialValue::Number(val.round()))
 	}
 }

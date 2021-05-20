@@ -24,20 +24,34 @@
 
 use std::fmt;
 
-use markup5ever_rcdom::NodeData;
-
-use crate::functions::{self, Args};
-use crate::{AxisName, DEBUG, Evaluation, Node, NodeTest, Nodeset, Result, Value, result::ValueError};
+use crate::{context::{NodeSearch, NodeSearchState}, functions::{self, Args}, value::PartialValue};
+use crate::{AxisName, DEBUG, Evaluation, Node, NodeTest, Result};
 
 pub type CallFunction = fn(ExpressionArg, ExpressionArg) -> ExpressionArg;
 pub type ExpressionArg = Box<dyn Expression>;
 
 
 pub trait Expression: fmt::Debug {
-	fn eval(&mut self, eval: &Evaluation) -> Result<Value>;
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>>;
 
-	fn count(&mut self) -> usize {
-		0
+	fn count(&mut self, eval: &Evaluation) -> Result<usize> {
+		let mut count = 0;
+
+		while self.next_eval(eval)?.is_some() {
+			count += 1;
+		}
+
+		Ok(count)
+	}
+
+	fn collect(&mut self, eval: &Evaluation) -> Result<Vec<PartialValue>> {
+		let mut nodes = Vec::new();
+
+		while let Some(node) = self.next_eval(eval)? {
+			nodes.push(node);
+		}
+
+		Ok(nodes)
 	}
 }
 
@@ -57,11 +71,11 @@ impl Equal {
 }
 
 impl Expression for Equal {
-	fn eval(&mut self, eval: &Evaluation) -> Result<Value> {
-		let left_value = self.left.eval(eval)?;
-		let right_value = self.right.eval(eval)?;
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>> {
+		let left_value = res_opt_catch!(self.left.next_eval(eval));
+		let right_value = res_opt_catch!(self.right.next_eval(eval));
 
-		Ok(Value::Boolean(left_value == right_value))
+		Ok(Some(PartialValue::Boolean(left_value == right_value)))
 	}
 }
 
@@ -79,11 +93,11 @@ impl NotEqual {
 }
 
 impl Expression for NotEqual {
-	fn eval(&mut self, eval: &Evaluation) -> Result<Value> {
-		let left_value = self.left.eval(eval)?;
-		let right_value = self.right.eval(eval)?;
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>> {
+		let left_value = res_opt_catch!(self.left.next_eval(eval));
+		let right_value = res_opt_catch!(self.right.next_eval(eval));
 
-		Ok(Value::Boolean(left_value != right_value))
+		Ok(Some(PartialValue::Boolean(left_value != right_value)))
 	}
 }
 
@@ -101,11 +115,11 @@ impl And {
 }
 
 impl Expression for And {
-	fn eval(&mut self, eval: &Evaluation) -> Result<Value> {
-		let left_value = self.left.eval(eval)?;
-		let right_value = self.right.eval(eval)?;
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>> {
+		let left_value = res_opt_catch!(self.left.next_eval(eval));
+		let right_value = res_opt_catch!(self.right.next_eval(eval));
 
-		Ok(Value::Boolean(left_value.boolean()? && right_value.boolean()?))
+		Ok(Some(PartialValue::Boolean(left_value.as_boolean()? && right_value.as_boolean()?)))
 	}
 }
 
@@ -124,28 +138,28 @@ impl Or {
 }
 
 impl Expression for Or {
-	fn eval(&mut self, eval: &Evaluation) -> Result<Value> {
-		let left_value = self.left.eval(eval)?;
-		let right_value = self.right.eval(eval)?;
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>> {
+		let left_value = res_opt_catch!(self.left.next_eval(eval));
+		let right_value = res_opt_catch!(self.right.next_eval(eval));
 
-		Ok(Value::Boolean(left_value.boolean()? || right_value.boolean()?))
+		Ok(Some(PartialValue::Boolean(left_value.as_boolean()? || right_value.as_boolean()?)))
 	}
 }
 
 // Primary Expressions
 
 #[derive(Debug)]
-pub struct Literal(Value);
+pub struct Literal(PartialValue);
 
-impl From<Value> for Literal {
-	fn from(value: Value) -> Self {
+impl From<PartialValue> for Literal {
+	fn from(value: PartialValue) -> Self {
 		Literal(value)
 	}
 }
 
 impl Expression for Literal {
-	fn eval(&mut self, _: &Evaluation) -> Result<Value> {
-		Ok(self.0.clone())
+	fn next_eval(&mut self, _: &Evaluation) -> Result<Option<PartialValue>> {
+		Ok(Some(self.0.clone()))
 	}
 }
 
@@ -156,8 +170,8 @@ impl Expression for Literal {
 pub struct RootNode;
 
 impl Expression for RootNode {
-	fn eval(&mut self, eval: &Evaluation) -> Result<Value> {
-		Ok(Value::Nodeset(vec![eval.root().clone()].into()))
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>> {
+		Ok(Some(PartialValue::Node(eval.root().clone())))
 	}
 }
 
@@ -166,9 +180,9 @@ impl Expression for RootNode {
 pub struct ContextNode;
 
 impl Expression for ContextNode {
-	fn eval(&mut self, eval: &Evaluation) -> Result<Value> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>> {
 		// TODO: Figure out. Cannot clone an Rc
-		Ok(Value::Nodeset(vec![eval.node.clone()].into()))
+		Ok(Some(PartialValue::Node(eval.node.clone())))
 	}
 }
 
@@ -176,29 +190,80 @@ impl Expression for ContextNode {
 #[derive(Debug)]
 pub struct Path {
 	pub start_pos: ExpressionArg,
-	pub steps: Vec<Step>
+	pub steps: Vec<Step>,
+	pub search_steps: Vec<NodeSearch>,
+	pub steps_initiated: bool
 }
 
 impl Path {
 	pub fn new(start_pos: ExpressionArg, steps: Vec<Step>) -> Self {
 		Self {
 			start_pos,
-			steps
+			steps,
+			search_steps: Vec::new(),
+			steps_initiated: false
+		}
+	}
+
+	pub fn find_next_node(&mut self, eval: &Evaluation) -> Result<Option<Node>> {
+		if self.search_steps.is_empty() {
+			Ok(None)
+		} else {
+			while let Some(mut search_state) = self.search_steps.pop() {
+				let step = &mut self.steps[self.search_steps.len()];
+
+				let node_eval = step.evaluate(eval, &mut search_state)?;
+
+				if let Some(node) = node_eval {
+					self.search_steps.push(search_state);
+
+					if self.steps.len() == self.search_steps.len() {
+						return Ok(Some(node));
+					} else {
+						// Add to step state
+						let axis = self.steps[self.search_steps.len()].axis;
+						self.search_steps.push(NodeSearch::new_with_state(axis, node));
+					}
+				}
+			}
+
+			Ok(None)
 		}
 	}
 }
 
 impl Expression for Path {
-	fn eval(&mut self, eval: &Evaluation) -> Result<Value> {
-		let result = self.start_pos.eval(eval)?;
-		let mut set = result.into_nodeset()?;
-
-		// 1st. We evaluate a set of nodes and step for each each one.
-		for step in &mut self.steps {
-			set = step.evaluate(eval, set)?;
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>> {
+		if self.steps_initiated && self.search_steps.is_empty() {
+			return Ok(None);
 		}
 
-		Ok(Value::Nodeset(set))
+		let result = res_opt_catch!(self.start_pos.next_eval(eval));
+
+		let node = if self.search_steps.is_empty() {
+			self.steps_initiated = true;
+
+			let mut found = result.into_node()?;
+
+			for step in &mut self.steps {
+				let mut state = NodeSearch::new_with_state(step.axis, found);
+
+				found = match step.evaluate(eval, &mut state)? {
+					Some(v) => v,
+					None => {
+						return Ok(Some(PartialValue::Node(res_opt_catch!(self.find_next_node(eval)))));
+					}
+				};
+
+				self.search_steps.push(state);
+			}
+
+			found
+		} else {
+			res_opt_catch!(self.find_next_node(eval))
+		};
+
+		Ok(Some(PartialValue::Node(node)))
 	}
 }
 
@@ -208,7 +273,8 @@ impl Expression for Path {
 pub struct Step {
 	axis: AxisName,
 	node_test: Box<dyn NodeTest>, // A Step Test
-	predicates: Vec<Predicate>
+	predicates: Vec<Predicate>,
+	search_cache: Option<NodeSearchState>
 }
 
 impl Step {
@@ -226,36 +292,37 @@ impl Step {
 			axis,
 			node_test,
 			predicates: preds,
+			search_cache: None
 		}
 	}
 
 	fn evaluate(
 		&mut self,
 		context: &Evaluation,
-		starting_nodes: Nodeset,
-	) -> Result<Nodeset> {
-		let mut unique = Nodeset::new();
-
+		state: &mut NodeSearch
+	) -> Result<Option<Node>> {
 		// 2nd. The each Node has a Evaluation assigned to it and we check if it has the next step in it.
-		for node in starting_nodes.nodes {
-			let child_context = context.new_evaluation_from(node);
 
-			let mut nodes = child_context.find_nodes(&self.axis, self.node_test.as_ref());
+		let node_pos = state.get_current_node_pos().unwrap();
 
+		let child_context = context.new_evaluation_from(node_pos);
+
+		let mut found_node = match child_context.find_nodes(state, self.node_test.as_ref()) {
+			Some(v) => v,
+			None => return Ok(None)
+		};
+
+		for predicate in &mut self.predicates {
 			// 3rd. Predicate check on the found Node(s)
-			for predicate in &mut self.predicates {
-				nodes = predicate.select(&context, nodes)?;
-			}
-
-			unique.extend(nodes);
+			// TODO: Know positions of Node for Evaluation.
+			found_node = res_opt_catch!(predicate.select(&context, found_node));
 		}
 
 		if DEBUG && !self.predicates.is_empty() {
 			println!("Pre Predicate:");
-			println!("{:#?}", unique);
 		}
 
-		Ok(unique)
+		Ok(Some(found_node))
 	}
 }
 
@@ -268,30 +335,26 @@ impl Predicate {
 	fn select<'c>(
 		&mut self,
 		context: &Evaluation<'c>,
-		nodes: Nodeset,
-	) -> Result<Nodeset> {
-		let found: Vec<Node> = context.new_evaluation_set_from(nodes)
-			.filter_map(|ctx| {
-				match self.matches_eval(&ctx) {
-					Ok(true) => Some(Ok(ctx.node)),
-					Ok(false) => None,
-					Err(e) => Some(Err(e)),
-				}
-			})
-			.collect::<Result<Vec<Node>>>()?;
+		node: Node,
+	) -> Result<Option<Node>> {
+		let ctx = context.new_evaluation_from(node);
 
-		Ok(found.into())
+		if res_opt_catch!(self.matches_eval(&ctx)) {
+			Ok(Some(ctx.node))
+		} else {
+			Ok(None)
+		}
 	}
 
-	fn matches_eval(&mut self, context: &Evaluation<'_>) -> Result<bool> {
-		let value = self.0.eval(context)?;
+	fn matches_eval(&mut self, context: &Evaluation<'_>) -> Result<Option<bool>> {
+		let value = res_opt_catch!(self.0.next_eval(context));
 
-		Ok(match value {
+		Ok(Some(match value {
 			// Is Node in the correct position? ex: //node[3]
-			Value::Number(v) => context.position == v as usize,
+			PartialValue::Number(v) => context.position == v as usize,
 			// Otherwise ensure a value properly exists.
-			_ => value.exists()
-		})
+			_ => value.is_something()
+		}))
 	}
 }
 
@@ -306,126 +369,7 @@ impl Function {
 }
 
 impl Expression for Function {
-	fn eval(&mut self, eval: &Evaluation) -> Result<Value> {
-		self.0.exec(eval, Args::new(self.1.as_mut()))
-	}
-}
-
-
-#[derive(Debug, Clone)]
-pub enum PartialValue {
-	Boolean(bool),
-	Number(f64),
-	String(String),
-	Node(Node)
-}
-
-impl PartialValue {
-	pub fn exists(&self) -> bool {
-		match self {
-			Self::Boolean(v) => *v,
-			Self::Number(v) => !v.is_nan(),
-			Self::String(v) => !v.is_empty(),
-			Self::Node(_) => true
-		}
-	}
-
-	pub fn as_node(&self) -> Result<&Node> {
-		match self {
-			Self::Node(s) =>  Ok(s),
-			_ => Err(ValueError::Nodeset.into())
-		}
-	}
-
-	pub fn is_node(&self) -> bool {
-		matches!(self, Self::Node(_))
-	}
-
-	pub fn into_node(self) -> Result<Node> {
-		match self {
-			Self::Node(s) =>  Ok(s),
-			_ => Err(ValueError::Nodeset.into())
-		}
-	}
-
-	pub fn boolean(&self) -> Result<bool> {
-		match self {
-			Self::Boolean(v) =>  Ok(*v),
-			_ => Err(ValueError::Boolean.into())
-		}
-	}
-
-	pub fn number(&self) -> Result<f64> {
-		match self {
-			Self::Number(v) =>  Ok(*v),
-			_ => Err(ValueError::Number.into())
-		}
-	}
-
-	pub fn as_string(&self) -> Result<&String> {
-		match self {
-			Self::String(v) =>  Ok(v),
-			_ => Err(ValueError::String.into())
-		}
-	}
-
-	pub fn string(self) -> Result<String> {
-		match self {
-			Self::String(v) =>  Ok(v),
-			_ => Err(ValueError::String.into())
-		}
-	}
-}
-
-impl Into<Value> for PartialValue {
-	fn into(self) -> Value {
-		match self {
-			Self::Boolean(v) => Value::Boolean(v),
-			Self::Number(v) => Value::Number(v),
-			Self::String(v) => Value::String(v),
-			Self::Node(v) => Value::Nodeset(Nodeset { nodes: vec![v] }),
-		}
-	}
-}
-
-
-impl PartialEq for PartialValue {
-	fn eq(&self, other: &Self) -> bool {
-		match (self, other) {
-			(Self::Number(v1), Self::Number(v2)) => v1 == v2,
-
-			// Noteset == String
-			(Self::Node(node), Self::String(value)) |
-			(Self::String(value), Self::Node(node)) => {
-				// TODO: No.
-				if &format!("{:?}", node) == value {
-					true
-				} else {
-					match node {
-						Node::Attribute(attr) => {
-							attr.value() == value
-						}
-
-						Node::Text(handle) => {
-							let upgrade = handle.upgrade().unwrap();
-							if let NodeData::Text { contents } = &upgrade.data {
-								contents.try_borrow().map(|v| v.as_ref() == value).unwrap_or_default()
-							} else {
-								false
-							}
-						}
-
-						_ => false
-					}
-				}
-			}
-
-			(Self::Node(set1), Self::Node(set2)) => {
-				// TODO: No.
-				format!("{:?}", set1) == format!("{:?}", set2)
-			}
-
-			_ => false
-		}
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>> {
+		self.0.exec(eval, Args::new(self.1.as_mut())).map(Some)
 	}
 }

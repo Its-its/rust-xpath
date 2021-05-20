@@ -151,6 +151,128 @@ impl PartialEq for Value {
 	}
 }
 
+
+#[derive(Debug, Clone)]
+pub enum PartialValue {
+	Boolean(bool),
+	Number(f64),
+	String(String),
+	Node(Node)
+}
+
+impl PartialValue {
+	pub fn is_something(&self) -> bool {
+		match self {
+			Self::Boolean(v) => *v,
+			Self::Number(v) => !v.is_nan(),
+			Self::String(v) => !v.is_empty(),
+			Self::Node(_) => true
+		}
+	}
+
+	pub fn as_node(&self) -> Result<&Node> {
+		match self {
+			Self::Node(s) =>  Ok(s),
+			_ => Err(ValueError::Nodeset.into())
+		}
+	}
+
+	pub fn is_node(&self) -> bool {
+		matches!(self, Self::Node(_))
+	}
+
+	pub fn into_node(self) -> Result<Node> {
+		match self {
+			Self::Node(s) =>  Ok(s),
+			_ => Err(ValueError::Nodeset.into())
+		}
+	}
+
+	pub fn as_boolean(&self) -> Result<bool> {
+		match self {
+			Self::Boolean(v) =>  Ok(*v),
+			_ => Err(ValueError::Boolean.into())
+		}
+	}
+
+	pub fn as_number(&self) -> Result<f64> {
+		match self {
+			Self::Number(v) =>  Ok(*v),
+			_ => Err(ValueError::Number.into())
+		}
+	}
+
+	pub fn as_string(&self) -> Result<&str> {
+		match self {
+			Self::String(v) =>  Ok(v),
+			_ => Err(ValueError::String.into())
+		}
+	}
+
+	pub fn into_string(self) -> Result<String> {
+		match self {
+			Self::String(v) =>  Ok(v),
+			_ => Err(ValueError::String.into())
+		}
+	}
+}
+
+impl Into<Value> for PartialValue {
+	fn into(self) -> Value {
+		match self {
+			Self::Boolean(v) => Value::Boolean(v),
+			Self::Number(v) => Value::Number(v),
+			Self::String(v) => Value::String(v),
+			Self::Node(v) => Value::Nodeset(vec![v].into()),
+		}
+	}
+}
+
+
+impl PartialEq for PartialValue {
+	fn eq(&self, other: &Self) -> bool {
+		match (self, other) {
+			(Self::Number(v1), Self::Number(v2)) => v1 == v2,
+
+			// Noteset == String
+			(Self::Node(node), Self::String(value)) |
+			(Self::String(value), Self::Node(node)) => {
+				// TODO: No.
+				if &format!("{:?}", node) == value {
+					true
+				} else {
+					match node {
+						Node::Attribute(attr) => {
+							attr.value() == value
+						}
+
+						Node::Text(handle) => {
+							let upgrade = handle.upgrade().unwrap();
+							if let NodeData::Text { contents } = &upgrade.data {
+								contents.try_borrow().map(|v| v.as_ref() == value).unwrap_or_default()
+							} else {
+								false
+							}
+						}
+
+						_ => false
+					}
+				}
+			}
+
+			(Self::Node(set1), Self::Node(set2)) => {
+				set1 == set2
+			}
+
+			_ => false
+		}
+	}
+}
+
+
+
+
+
 #[derive(Clone)]
 pub struct Attribute {
 	pub parent: WeakNodeHandle,
@@ -251,6 +373,10 @@ impl Node {
 
 	pub fn is_processing_instruction(&self) -> bool {
 		matches!(self, Node::ProcessingInstruction(_))
+	}
+
+	pub fn get_string_value(&self) -> Result<String> {
+		self.value().and_then(|v| v.string())
 	}
 
 	pub fn value(&self) -> Result<Value> {
