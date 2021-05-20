@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::{cell::Cell, ops::{Deref, DerefMut}};
 use std::rc::Rc;
 use std::fmt;
 
@@ -18,15 +18,6 @@ pub enum Value {
 }
 
 impl Value {
-	pub fn exists(&self) -> bool {
-		match self {
-			Value::Boolean(v) => *v,
-			Value::Number(v) => !v.is_nan(),
-			Value::String(v) => !v.is_empty(),
-			Value::Nodeset(v) => !v.nodes.is_empty()
-		}
-	}
-
 	pub fn as_nodeset(&self) -> Result<&Nodeset> {
 		match self {
 			Value::Nodeset(s) =>  Ok(s),
@@ -48,41 +39,41 @@ impl Value {
 		}
 	}
 
-	pub fn vec_string(self) -> Result<Vec<String>> {
-		let value_iter = self.into_iterset()?
-			.map(|i| i.value().and_then(|v| v.string()))
-			.collect::<Result<Vec<String>>>()?;
 
-		Ok(value_iter)
-	}
-
-
-	pub fn boolean(&self) -> Result<bool> {
+	pub fn as_boolean(&self) -> Result<bool> {
 		match self {
 			Value::Boolean(v) =>  Ok(*v),
 			_ => Err(ValueError::Boolean.into())
 		}
 	}
 
-	pub fn number(&self) -> Result<f64> {
+	pub fn as_number(&self) -> Result<f64> {
 		match self {
 			Value::Number(v) =>  Ok(*v),
 			_ => Err(ValueError::Number.into())
 		}
 	}
 
-	pub fn as_string(&self) -> Result<&String> {
+	pub fn as_string(&self) -> Result<&str> {
 		match self {
 			Value::String(v) =>  Ok(v),
 			_ => Err(ValueError::String.into())
 		}
 	}
 
-	pub fn string(self) -> Result<String> {
+	pub fn into_string(self) -> Result<String> {
 		match self {
 			Value::String(v) =>  Ok(v),
 			_ => Err(ValueError::String.into())
 		}
+	}
+
+	pub fn into_vec_string(self) -> Result<Vec<String>> {
+		let value_iter = self.into_iterset()?
+			.map(|i| i.value().and_then(|v| v.into_string()))
+			.collect::<Result<Vec<String>>>()?;
+
+		Ok(value_iter)
 	}
 
 	/// Checks `Value::String` and `Value::Nodeset` for a string value.
@@ -90,7 +81,7 @@ impl Value {
 		match self {
 			Value::String(v) =>  Ok(v),
 			this => {
-				let mut array = this.vec_string()?;
+				let mut array = this.into_vec_string()?;
 
 				if !array.is_empty() {
 					Ok(array.remove(0))
@@ -110,12 +101,11 @@ impl PartialEq for Value {
 			// Noteset == String
 			(Value::Nodeset(set), Value::String(value)) |
 			(Value::String(value), Value::Nodeset(set)) => {
-
-				if set.nodes.is_empty() {
+				if set.is_empty() {
 					return false;
 				}
 
-				set.nodes.iter()
+				set.iter()
 				.any(|node| {
 					// TODO: No.
 					if &format!("{:?}", node) == value {
@@ -376,7 +366,7 @@ impl Node {
 	}
 
 	pub fn get_string_value(&self) -> Result<String> {
-		self.value().and_then(|v| v.string())
+		self.value().and_then(|v| v.into_string())
 	}
 
 	pub fn value(&self) -> Result<Value> {
@@ -806,41 +796,39 @@ impl fmt::Debug for Node {
 
 // TODO: Ensure no duplicate nodes
 #[derive(Clone)]
-pub struct Nodeset {
-	pub nodes: Vec<Node>
-}
+pub struct Nodeset(Vec<Node>);
 
 impl Nodeset {
 	pub fn new() -> Self {
-		Default::default()
+		Nodeset(Vec::new())
 	}
 
 	pub fn add_node_handle(&mut self, node: &NodeHandle) {
-		self.nodes.push(node.into());
+		self.0.push(node.into());
 	}
 
-	pub fn add_node(&mut self, node: Node) {
-		self.nodes.push(node);
-	}
-
-	pub fn extend(&mut self, nodeset: Nodeset) {
-		self.nodes.extend(nodeset.nodes);
-	}
-
-	pub fn len(&self) -> usize {
-		self.nodes.len()
-	}
-
-	pub fn is_empty(&self) -> bool {
-		self.nodes.is_empty()
+	pub fn extend_from_nodeset(&mut self, nodeset: Nodeset) {
+		self.0.extend(nodeset.0);
 	}
 }
 
 impl Default for Nodeset {
 	fn default() -> Self {
-		Nodeset {
-			nodes: Vec::new()
-		}
+		Self::new()
+	}
+}
+
+impl Deref for Nodeset {
+	type Target = Vec<Node>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.0
+	}
+}
+
+impl DerefMut for Nodeset {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.0
 	}
 }
 
@@ -850,15 +838,13 @@ impl IntoIterator for Nodeset {
 	type IntoIter = std::vec::IntoIter<Self::Item>;
 
 	fn into_iter(self) -> Self::IntoIter {
-		self.nodes.into_iter()
+		self.0.into_iter()
 	}
 }
 
 impl From<Vec<Node>> for Nodeset {
 	fn from(nodes: Vec<Node>) -> Self {
-		Self {
-			nodes
-		}
+		Self(nodes)
 	}
 }
 
@@ -866,7 +852,7 @@ impl fmt::Debug for Nodeset {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		let mut list = f.debug_list();
 
-		self.nodes.iter()
+		self.iter()
 		.for_each(|node| {
 			list.entry(&node.as_simple_html());
 		});

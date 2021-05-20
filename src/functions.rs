@@ -426,7 +426,7 @@ impl Function for Sum {
 				let node = n.into_node()?;
 				let value = node.value()?;
 
-				value.number()
+				value.as_number()
 			})
 			.collect::<Result<Vec<f64>>>()?;
 

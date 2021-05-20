@@ -20,7 +20,7 @@ impl<'a> ProduceIter<'a> {
 		Ok(Value::Nodeset(self.try_fold::<_, _, Result<Nodeset>>(
 			Nodeset::new(),
 			|mut set, v| {
-				set.add_node(v.into_node()?);
+				set.push(v.into_node()?);
 				Ok(set)
 			}
 		)?))
