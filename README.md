@@ -1,2 +1,3 @@
-A *remake* of [sxd-xpath](https://github.com/shepmaster/sxd-xpath) so I can learn parsing.
-Not complete. Not recommended.
+A *remake* of [sxd-xpath](https://github.com/shepmaster/sxd-xpath) to better fit my needs.
+
+Not complete.
