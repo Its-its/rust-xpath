@@ -32,14 +32,6 @@ impl Value {
 		}
 	}
 
-	pub fn into_iterset(self) -> Result<NodeIterset> {
-		match self {
-			Value::Nodeset(s) =>  Ok(NodeIterset::new(s.into_iter())),
-			_ => Err(ValueError::Nodeset.into())
-		}
-	}
-
-
 	pub fn as_boolean(&self) -> Result<bool> {
 		match self {
 			Value::Boolean(v) =>  Ok(*v),
@@ -69,7 +61,8 @@ impl Value {
 	}
 
 	pub fn into_vec_string(self) -> Result<Vec<String>> {
-		let value_iter = self.into_iterset()?
+		let value_iter = self.into_nodeset()?
+			.into_iter()
 			.map(|i| i.value().and_then(|v| v.into_string()))
 			.collect::<Result<Vec<String>>>()?;
 
@@ -860,28 +853,6 @@ impl fmt::Debug for Nodeset {
 
 		list.finish()
 	}
-}
-
-pub struct NodeIterset(std::vec::IntoIter<Node>);
-
-impl NodeIterset {
-	pub fn new(set: std::vec::IntoIter<Node>) -> Self {
-		Self(set)
-	}
-}
-
-impl Iterator for NodeIterset {
-	type Item = Node;
-
-	fn next(&mut self) -> Option<Self::Item> {
-		self.0.next()
-	}
-}
-
-pub struct Valueset(Vec<Value>);
-
-impl Valueset {
-	//
 }
 
 

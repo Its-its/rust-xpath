@@ -1,6 +1,6 @@
 // What we'll be iterating through.
 
-use crate::{Document, Node, Nodeset, AxisName, NodeTest};
+use crate::{Document, Node, AxisName, NodeTest};
 use crate::value;
 
 #[derive(Debug)]
@@ -49,14 +49,6 @@ impl<'a> Evaluation<'a> {
 			size
 		}
 	}
-
-	pub fn new_evaluation_set_from(&'a self, nodes: Nodeset) -> EvaluationNodesetIter<'a> {
-		EvaluationNodesetIter {
-			parent: self,
-			size: nodes.nodes.len(),
-			nodes: nodes.nodes.into_iter().enumerate(),
-		}
-	}
 }
 
 pub struct EvaluationNodesetIter<'a> {
@@ -101,10 +93,6 @@ impl NodeSearch {
 				NodeSearchState::new(context, node)
 			]
 		}
-	}
-
-	pub fn add_state(&mut self, state: NodeSearchState) {
-		self.states.push(state);
 	}
 
 	pub fn get_current_node_pos(&self) -> Option<Node> {

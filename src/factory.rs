@@ -656,16 +656,6 @@ impl<S: Iterator<Item = ExprToken>> Stepper<S> {
 		}
 	}
 
-	pub fn consume_func<F: FnOnce(&S::Item) -> bool>(&mut self, token: F) -> Result<()> {
-		let step = self.next().ok_or(Error::InputEmpty)?;
-
-		if token(&step) {
-			Ok(())
-		} else {
-			Err(Error::UnexpectedToken(step))
-		}
-	}
-
 	pub fn peek(&mut self) -> Option<&S::Item> {
 		self.0.peek()
 	}
