@@ -25,7 +25,7 @@
 use std::fmt;
 
 use crate::{context::{NodeSearch, NodeSearchState}, functions::{self, Args}, value::PartialValue};
-use crate::{AxisName, DEBUG, Evaluation, Node, NodeTest, Result};
+use crate::{AxisName, Evaluation, Node, NodeTest, Result};
 
 pub type CallFunction = fn(ExpressionArg, ExpressionArg) -> ExpressionArg;
 pub type ExpressionArg = Box<dyn Expression>;
@@ -212,17 +212,19 @@ impl Path {
 			while let Some(mut search_state) = self.search_steps.pop() {
 				let step = &mut self.steps[self.search_steps.len()];
 
-				let node_eval = step.evaluate(eval, &mut search_state)?;
+				let found_node_eval = step.evaluate(eval, &mut search_state)?;
 
-				if let Some(node) = node_eval {
+				if let Some(passed_pred_eval) = found_node_eval {
 					self.search_steps.push(search_state);
 
-					if self.steps.len() == self.search_steps.len() {
-						return Ok(Some(node));
-					} else {
-						// Add to step state
-						let axis = self.steps[self.search_steps.len()].axis;
-						self.search_steps.push(NodeSearch::new_with_state(axis, node));
+					if let Some(node) = passed_pred_eval {
+						if self.steps.len() == self.search_steps.len() {
+							return Ok(Some(node));
+						} else {
+							// Add to step state
+							let axis = self.steps[self.search_steps.len()].axis;
+							self.search_steps.push(NodeSearch::new_with_state(axis, node));
+						}
 					}
 				}
 			}
@@ -248,7 +250,7 @@ impl Expression for Path {
 			for step in &mut self.steps {
 				let mut state = NodeSearch::new_with_state(step.axis, found);
 
-				found = match step.evaluate(eval, &mut state)? {
+				found = match step.evaluate(eval, &mut state)?.flatten() {
 					Some(v) => v,
 					None => {
 						return Ok(Some(PartialValue::Node(res_opt_catch!(self.find_next_node(eval)))));
@@ -285,7 +287,7 @@ impl Step {
 	) -> Step {
 		let preds = predicates
 			.into_iter()
-			.map(|p| Predicate(p))
+			.map(Predicate)
 			.collect();
 
 		Step {
@@ -300,29 +302,26 @@ impl Step {
 		&mut self,
 		context: &Evaluation,
 		state: &mut NodeSearch
-	) -> Result<Option<Node>> {
-		// 2nd. The each Node has a Evaluation assigned to it and we check if it has the next step in it.
+	) -> Result<Option<Option<Node>>> {
+		// Option<Option<Node>> - 1st Option is used to check where we found a node. 2nd is returning Node after predicate.
+		let current_states = state.get_current_state().unwrap();
 
-		let node_pos = state.get_current_node_pos().unwrap();
+		let mut child_context = context.new_evaluation_from(current_states.node.clone());
 
-		let child_context = context.new_evaluation_from(node_pos);
-
-		let mut found_node = match child_context.find_nodes(state, self.node_test.as_ref()) {
+		let mut found_node = match state.find_next(&mut child_context, self.node_test.as_ref()) {
 			Some(v) => v,
 			None => return Ok(None)
 		};
 
 		for predicate in &mut self.predicates {
-			// 3rd. Predicate check on the found Node(s)
-			// TODO: Know positions of Node for Evaluation.
-			found_node = res_opt_catch!(predicate.select(&context, found_node));
+			let eval = context.new_evaluation_from_with_pos(found_node, child_context.position);
+			found_node = match predicate.select(eval)? {
+				Some(v) => v,
+				None => return Ok(Some(None))
+			}
 		}
 
-		if DEBUG && !self.predicates.is_empty() {
-			println!("Pre Predicate:");
-		}
-
-		Ok(Some(found_node))
+		Ok(Some(Some(found_node)))
 	}
 }
 
@@ -332,13 +331,10 @@ impl Step {
 struct Predicate(ExpressionArg);
 
 impl Predicate {
-	fn select<'c>(
+	fn select(
 		&mut self,
-		context: &Evaluation<'c>,
-		node: Node,
+		ctx: Evaluation
 	) -> Result<Option<Node>> {
-		let ctx = context.new_evaluation_from(node);
-
 		if res_opt_catch!(self.matches_eval(&ctx)) {
 			Ok(Some(ctx.node))
 		} else {
