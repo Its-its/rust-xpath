@@ -189,38 +189,26 @@ impl ExprToken {
 
 macro_rules! from_impl {
 	($struct:ident, $enum:ident) => {
-		impl Into<ExprToken> for $struct {
-			fn into(self) -> ExprToken {
-				ExprToken::$enum(self)
+		impl From<$struct> for ExprToken {
+			fn from(this: $struct) -> ExprToken {
+				ExprToken::$enum(this)
 			}
 		}
 
-		impl Into<ExprToken> for &$struct {
-			fn into(self) -> ExprToken {
-				ExprToken::$enum(self.clone())
+		impl From<&$struct> for ExprToken {
+			fn from(this: &$struct) -> ExprToken {
+				ExprToken::$enum(this.clone())
 			}
 		}
 
-		impl Into<Option<$struct>> for ExprToken {
-			fn into(self) -> Option<$struct> {
-				match self {
+		impl From<ExprToken> for Option<$struct> {
+			fn from(this: ExprToken) -> Option<$struct> {
+				match this {
 					ExprToken::$enum(op) => Some(op),
 					_ => None
 				}
 			}
 		}
-
-		// impl From<$struct> for ExprToken {
-		// 	fn from(op: $struct) -> ExprToken {
-		// 		ExprToken::$enum(op)
-		// 	}
-		// }
-
-		// impl From<&$struct> for ExprToken {
-		// 	fn from(op: &$struct) -> ExprToken {
-		// 		ExprToken::$enum(op.clone())
-		// 	}
-		// }
 	};
 }
 
@@ -230,12 +218,3 @@ from_impl!(String, Literal);
 from_impl!(NameTest, NameTest);
 from_impl!(NodeType, NodeType);
 from_impl!(Operator, Operator);
-
-// impl Into<Operator> for ExprToken {
-// 	fn into(self) -> Operator {
-// 		match self {
-// 			ExprToken::Operator(op) => op,
-// 			_ => panic!("ExprToken is not an Operator")
-// 		}
-// 	}
-// }

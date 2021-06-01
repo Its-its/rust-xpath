@@ -206,9 +206,7 @@ impl Path {
 	}
 
 	pub fn find_next_node_with_steps(&mut self, eval: &Evaluation) -> Result<Option<Node>> {
-		if self.search_steps.is_empty() {
-			Ok(None)
-		} else {
+		if !self.search_steps.is_empty() {
 			while let Some(mut search_state) = self.search_steps.pop() {
 				let step = &mut self.steps[self.search_steps.len()];
 
@@ -229,9 +227,9 @@ impl Path {
 					}
 				}
 			}
-
-			Ok(None)
 		}
+
+		Ok(None)
 	}
 
 	pub fn find_next_node(&mut self, eval: &Evaluation) -> Result<Option<Node>> {
@@ -355,8 +353,6 @@ impl Predicate {
 
 	fn matches_eval(&mut self, context: &Evaluation<'_>) -> Result<Option<bool>> {
 		let value = res_opt_catch!(self.0.next_eval(context));
-
-		println!("{:?} == {:?}", value, context.node_position);
 
 		Ok(Some(match value {
 			// Is Node in the correct position? ex: //node[3]
