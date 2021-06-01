@@ -205,7 +205,7 @@ impl Path {
 		}
 	}
 
-	pub fn find_next_node(&mut self, eval: &Evaluation) -> Result<Option<Node>> {
+	pub fn find_next_node_with_steps(&mut self, eval: &Evaluation) -> Result<Option<Node>> {
 		if self.search_steps.is_empty() {
 			Ok(None)
 		} else {
@@ -222,8 +222,9 @@ impl Path {
 							return Ok(Some(node));
 						} else {
 							// Add to step state
-							let axis = self.steps[self.search_steps.len()].axis;
-							self.search_steps.push(NodeSearch::new_with_state(axis, node));
+							let step = &self.steps[self.search_steps.len()];
+
+							self.search_steps.push(NodeSearch::new_with_state(step.axis, node, eval, &*step.node_test));
 						}
 					}
 				}
@@ -232,10 +233,8 @@ impl Path {
 			Ok(None)
 		}
 	}
-}
 
-impl Expression for Path {
-	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>> {
+	pub fn find_next_node(&mut self, eval: &Evaluation) -> Result<Option<Node>> {
 		if self.steps_initiated && self.search_steps.is_empty() {
 			return Ok(None);
 		}
@@ -248,12 +247,12 @@ impl Expression for Path {
 			let mut found = result.into_node()?;
 
 			for step in &mut self.steps {
-				let mut state = NodeSearch::new_with_state(step.axis, found);
+				let mut state = NodeSearch::new_with_state(step.axis, found, eval, &*step.node_test);
 
 				found = match step.evaluate(eval, &mut state)?.flatten() {
 					Some(v) => v,
 					None => {
-						return Ok(Some(PartialValue::Node(res_opt_catch!(self.find_next_node(eval)))));
+						return Ok(Some(res_opt_catch!(self.find_next_node_with_steps(eval))));
 					}
 				};
 
@@ -262,10 +261,20 @@ impl Expression for Path {
 
 			found
 		} else {
-			res_opt_catch!(self.find_next_node(eval))
+			res_opt_catch!(self.find_next_node_with_steps(eval))
 		};
 
-		Ok(Some(PartialValue::Node(node)))
+		Ok(Some(node))
+	}
+}
+
+impl Expression for Path {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>> {
+		let found_node = res_opt_catch!(self.find_next_node(eval));
+
+		//
+
+		Ok(Some(PartialValue::Node(found_node)))
 	}
 }
 
@@ -303,25 +312,27 @@ impl Step {
 		context: &Evaluation,
 		state: &mut NodeSearch
 	) -> Result<Option<Option<Node>>> {
-		// Option<Option<Node>> - 1st Option is used to check where we found a node. 2nd is returning Node after predicate.
-		let current_states = state.get_current_state().unwrap();
+		// Option<Option<Node>> - 1st Option is used to check if we found a node. 2nd is returning Node if predicates succeed.
 
-		let mut child_context = context.new_evaluation_from(current_states.node.clone());
-
-		let mut found_node = match state.find_next(&mut child_context, self.node_test.as_ref()) {
+		let found_node = match state.find_and_cache_next_node(context, self.node_test.as_ref()) {
 			Some(v) => v,
 			None => return Ok(None)
 		};
 
+		let mut node = found_node.node;
+
+		// Check specifiers.
 		for predicate in &mut self.predicates {
-			let eval = context.new_evaluation_from_with_pos(found_node, child_context.position);
-			found_node = match predicate.select(eval)? {
+			let mut eval = context.new_evaluation_from_with_pos(node, found_node.position);
+			eval.is_last_node = state.is_finished();
+
+			node = match predicate.select(eval)? {
 				Some(v) => v,
 				None => return Ok(Some(None))
 			}
 		}
 
-		Ok(Some(Some(found_node)))
+		Ok(Some(Some(node)))
 	}
 }
 
@@ -345,9 +356,11 @@ impl Predicate {
 	fn matches_eval(&mut self, context: &Evaluation<'_>) -> Result<Option<bool>> {
 		let value = res_opt_catch!(self.0.next_eval(context));
 
+		println!("{:?} == {:?}", value, context.node_position);
+
 		Ok(Some(match value {
 			// Is Node in the correct position? ex: //node[3]
-			PartialValue::Number(v) => context.position == v as usize,
+			PartialValue::Number(v) => context.node_position == v as usize,
 			// Otherwise ensure a value properly exists.
 			_ => value.is_something()
 		}))

@@ -1,15 +1,18 @@
-// What we'll be iterating through.
+// Used to tell us how to iterate through the Nodes.
 
-use crate::{Document, Node, AxisName, NodeTest};
-use crate::value;
+use crate::{
+	value,
+	Document, Node, AxisName, NodeTest
+};
 
 #[derive(Debug)]
 pub struct Evaluation<'a> {
 	pub document: &'a Document,
 	pub node: Node,
 
-	pub position: usize,
-	pub size: usize // TODO: Make a fn. Since we don't know the size.
+	pub node_position: usize,
+
+	pub is_last_node: bool
 }
 
 
@@ -19,8 +22,8 @@ impl<'a> Evaluation<'a> {
 		Evaluation {
 			document,
 			node,
-			position: 1,
-			size: 1
+			node_position: 1,
+			is_last_node: false
 		}
 	}
 
@@ -32,8 +35,8 @@ impl<'a> Evaluation<'a> {
 		Self {
 			document: self.document,
 			node,
-			position: 1,
-			size: 1
+			node_position: 1,
+			is_last_node: false
 		}
 	}
 
@@ -41,54 +44,57 @@ impl<'a> Evaluation<'a> {
 		Self {
 			document: self.document,
 			node,
-			position,
-			size: 1
+			node_position: position,
+			is_last_node: false
 		}
 	}
 }
 
-pub struct EvaluationNodesetIter<'a> {
-	parent: &'a Evaluation<'a>,
-	nodes: std::iter::Enumerate<std::vec::IntoIter<Node>>,
-	size: usize
-}
 
-impl<'a> Iterator for EvaluationNodesetIter<'a> {
-    type Item = Evaluation<'a>;
-
-    fn next(&mut self) -> Option<Evaluation<'a>> {
-        if let Some((idx, node)) = self.nodes.next() {
-			Some(Evaluation {
-				document: self.parent.document,
-				node,
-				position: idx + 1,
-				size: self.size
-			})
-		} else {
-			None
-		}
-    }
+#[derive(Debug)]
+pub struct FoundNode {
+	pub node: Node,
+	pub position: usize
 }
 
 
 #[derive(Debug)]
 pub struct NodeSearch {
-	states: Vec<NodeSearchState>
+	states: Vec<NodeSearchState>,
+
+	/// Stores Node and position of Node.
+	cached_node_info: Option<FoundNode>
 }
 
 impl NodeSearch {
 	pub fn new() -> Self {
 		Self {
-			states: Vec::new()
+			states: Vec::new(),
+			cached_node_info: None
 		}
 	}
 
-	pub fn new_with_state(context: AxisName, node: Node) -> Self {
-		Self {
+	pub fn is_finished(&self) -> bool {
+		self.cached_node_info.is_none() || self.states.is_empty()
+	}
+
+	pub fn new_with_state(context: AxisName, node: Node, eval: &Evaluation, node_test: &dyn NodeTest) -> Self {
+		let eval = eval.new_evaluation_from(node.clone());
+
+		let mut this = Self {
 			states: vec![
 				NodeSearchState::new(context, node)
-			]
-		}
+			],
+			cached_node_info: None
+		};
+
+
+		// Place Node into next_node.
+		let node = this.find_next_node(&eval, node_test);
+
+		this.cached_node_info = node;
+
+		this
 	}
 
 	pub fn get_current_state(&self) -> Option<&NodeSearchState> {
@@ -96,12 +102,12 @@ impl NodeSearch {
 	}
 
 	/// Iterate until we (hopefully) find a Node.
-	pub fn find_next(&mut self, eval: &mut Evaluation, node_test: &dyn NodeTest) -> Option<Node> {
-		// TODO: There has to be a better way to do this.
+	fn find_next_node(&mut self, eval: &Evaluation, node_test: &dyn NodeTest) -> Option<FoundNode> {
 		while let Some(mut state) = self.states.pop() {
 			// Find Nodes in state.
 			let (node, states) = state.find_next_node(eval, node_test);
 
+			// Store current state size.
 			let prev_state_size = self.states.len();
 
 			// Place any new states into the List.
@@ -109,20 +115,35 @@ impl NodeSearch {
 				self.states.append(&mut states);
 			}
 
-			eval.position = state.found_count + 1;
+			state.found_count += 1;
+
+			let node_pos = state.found_count;
 
 			if node.is_some() {
-				state.found_count += 1;
 				// Place state back into array. It could have more Nodes in it.
 				self.states.insert(prev_state_size, state);
 			}
 
 			if let Some(node) = node {
-				return Some(node);
+				// Cache found nodes?
+				return Some(FoundNode { node, position: node_pos });
 			}
 		}
 
 		None
+	}
+
+	pub fn find_and_cache_next_node(&mut self, super_eval: &Evaluation, node_test: &dyn NodeTest) -> Option<FoundNode> {
+		if self.is_finished() {
+			return self.cached_node_info.take();
+		}
+
+		let child_eval = super_eval.new_evaluation_from(self.get_current_state()?.node.clone());
+
+		// Get next node, replace next node with current cached node.
+		let next_node = self.find_next_node(&child_eval, node_test);
+
+		std::mem::replace(&mut self.cached_node_info, next_node)
 	}
 }
 

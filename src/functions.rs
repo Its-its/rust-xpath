@@ -41,7 +41,13 @@ pub struct Last;
 
 impl Function for Last {
 	fn exec<'a>(&self, eval: &Evaluation, _: Args<'a>) -> Result<PartialValue> {
-		Ok(PartialValue::Number(eval.size as f64))
+		Ok(PartialValue::Number(
+			if eval.is_last_node {
+				eval.node_position as f64
+			} else {
+				0.0 // Use 0 since node positions start at 1
+			}
+		))
 	}
 }
 
@@ -52,7 +58,7 @@ pub struct Position;
 
 impl Function for Position {
 	fn exec<'a>(&self, eval: &Evaluation, _: Args<'a>) -> Result<PartialValue> {
-		Ok(PartialValue::Number(eval.position as f64))
+		Ok(PartialValue::Number(eval.node_position as f64))
 	}
 }
 
