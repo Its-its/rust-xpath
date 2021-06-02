@@ -49,15 +49,15 @@ impl Document {
 	}
 
 	pub fn evaluate<S: Into<String>>(&self, search: S) -> Result<ProduceIter> {
-		self.evaluate_from(search, self.root.clone())
+		self.evaluate_from(search, &self.root)
 	}
 
-	pub fn evaluate_from<S: Into<String>>(&self, search: S, node: Node) -> Result<ProduceIter> {
+	pub fn evaluate_from<'b, 'a: 'b, S: Into<String>>(&'a self, search: S, node: &'a Node) -> Result<ProduceIter<'b>> {
 		Factory::new(search, self, node).produce()
 	}
 
 	pub fn evaluate_steps(&self, steps: Vec<ExprToken>) -> Result<ProduceIter> {
-		Factory::new_from_steps(steps, self, self.root.clone()).produce()
+		Factory::new_from_steps(steps, self, &self.root).produce()
 	}
 }
 
@@ -81,7 +81,7 @@ pub struct Factory<'eval> {
 }
 
 impl<'eval, 'b: 'eval> Factory<'eval> {
-	pub fn new<S: Into<String>>(query: S, document: &'eval Document, node: Node) -> Self {
+	pub fn new<S: Into<String>>(query: S, document: &'eval Document, node: &'b Node) -> Self {
 		Factory {
 			eval: Evaluation::new(node, document),
 			tokenizer: Tokenizer::new(query),
@@ -90,7 +90,7 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 		}
 	}
 
-	pub fn new_from_steps(steps: Vec<ExprToken>, document: &'eval Document, node: Node) -> Self {
+	pub fn new_from_steps(steps: Vec<ExprToken>, document: &'eval Document, node: &'b Node) -> Self {
 		Factory {
 			eval: Evaluation::new(node, document),
 			tokenizer: Tokenizer::new(""),
@@ -198,7 +198,7 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 	}
 
 	// OrExpr				::= AndExpr | Self 'or' AndExpr
-	fn parse_or_expression<S: Iterator<Item = ExprToken>>(&'b self, step: &mut Stepper<S>) -> ExpressionResult {
+	fn parse_or_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
 		let left_expr = self.parse_and_expression(step)?;
 
 		// Self 'or' AndExpr

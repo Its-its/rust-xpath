@@ -8,7 +8,7 @@ use crate::{
 #[derive(Debug)]
 pub struct Evaluation<'a> {
 	pub document: &'a Document,
-	pub node: Node,
+	pub node: &'a Node,
 
 	pub node_position: usize,
 
@@ -18,7 +18,7 @@ pub struct Evaluation<'a> {
 
 
 impl<'a> Evaluation<'a> {
-	pub fn new(node: Node, document: &'a Document) -> Evaluation<'a> {
+	pub fn new(node: &'a Node, document: &'a Document) -> Evaluation<'a> {
 		Evaluation {
 			document,
 			node,
@@ -31,7 +31,7 @@ impl<'a> Evaluation<'a> {
 		&self.document.root
 	}
 
-	pub fn new_evaluation_from(&'a self, node: Node) -> Self {
+	pub fn new_evaluation_from(&'a self, node: &'a Node) -> Self {
 		Self {
 			document: self.document,
 			node,
@@ -40,7 +40,7 @@ impl<'a> Evaluation<'a> {
 		}
 	}
 
-	pub fn new_evaluation_from_with_pos(&'a self, node: Node, position: usize) -> Self {
+	pub fn new_evaluation_from_with_pos(&'a self, node: &'a Node, position: usize) -> Self {
 		Self {
 			document: self.document,
 			node,
@@ -79,15 +79,14 @@ impl NodeSearch {
 	}
 
 	pub fn new_with_state(context: AxisName, node: Node, eval: &Evaluation, node_test: &dyn NodeTest) -> Self {
-		let eval = eval.new_evaluation_from(node.clone());
-
 		let mut this = Self {
 			states: vec![
-				NodeSearchState::new(context, node)
+				NodeSearchState::new(context, node.clone())
 			],
 			cached_node_info: None
 		};
 
+		let eval = eval.new_evaluation_from(&node);
 
 		// Place Node into next_node.
 		let node = this.find_next_node(&eval, node_test);
@@ -138,7 +137,9 @@ impl NodeSearch {
 			return self.cached_node_info.take();
 		}
 
-		let child_eval = super_eval.new_evaluation_from(self.get_current_state()?.node.clone());
+		let state_node = self.get_current_state()?.node.clone();
+
+		let child_eval = super_eval.new_evaluation_from(&state_node);
 
 		// Get next node, replace next node with current cached node.
 		let next_node = self.find_next_node(&child_eval, node_test);
@@ -182,7 +183,7 @@ impl NodeSearchState {
 		match &self.axis_name {
 			AxisName::Ancestor => {
 				if let Some(parent) = self.node.parent() {
-					let eval = eval.new_evaluation_from(parent);
+					let eval = eval.new_evaluation_from(&parent);
 
 					if let Some(node) = node_test.test(&eval) {
 						let states = if node.is_root() {
@@ -191,7 +192,7 @@ impl NodeSearchState {
 							Some(vec![Self::new(AxisName::Ancestor, node.clone())])
 						};
 
-						return (Some(node), states);
+						return (Some(parent), states);
 					}
 				}
 			}
@@ -210,12 +211,12 @@ impl NodeSearchState {
 				if let Node::Element(node) = &self.node {
 					if let Some(mut attrs) = value::Attribute::from_node(node) {
 						while self.offset < attrs.len() {
-							let node = Node::Attribute(attrs.remove(self.offset));
+							let node_attr = Node::Attribute(attrs.remove(self.offset));
 
 							self.offset += 1;
 
-							if let Some(node) = node_test.test(&eval.new_evaluation_from(node)) {
-								return (Some(node), None);
+							if node_test.test(&eval.new_evaluation_from(&node_attr)).is_some() {
+								return (Some(node_attr), None);
 							}
 						}
 					}
@@ -239,10 +240,10 @@ impl NodeSearchState {
 				while let Some(child) = children.pop() {
 					self.offset += 1;
 
-					let new_context = eval.new_evaluation_from_with_pos(child, self.offset);
+					let new_context = eval.new_evaluation_from_with_pos(&child, self.offset);
 
-					if let Some(node) = node_test.test(&new_context) {
-						return (Some(node), None);
+					if node_test.test(&new_context).is_some() {
+						return (Some(child), None);
 					}
 				}
 			}
@@ -265,10 +266,10 @@ impl NodeSearchState {
 				while let Some(child) = children.pop() {
 					self.offset += 1;
 
-					let new_context = eval.new_evaluation_from_with_pos(child, self.offset);
+					let new_context = eval.new_evaluation_from_with_pos(&child, self.offset);
 
-					if let Some(node) = node_test.test(&new_context) {
-						return (Some(node), Some(vec![NodeSearchState::new(AxisName::Descendant, new_context.node)]));
+					if node_test.test(&new_context).is_some() {
+						return (Some(child.clone()), Some(vec![NodeSearchState::new(AxisName::Descendant, child)]));
 					}
 				}
 			}
@@ -402,7 +403,7 @@ impl NodeSearchState {
 			AxisName::SelfAxis => if self.offset == 0 {
 				if let Some(node) = node_test.test(eval) {
 					self.offset = 1;
-					return (Some(node), None);
+					return (Some(node.clone()), None);
 				}
 			}
 		}
