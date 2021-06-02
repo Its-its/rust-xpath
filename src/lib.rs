@@ -34,7 +34,7 @@ pub use factory::{Factory, Document};
 pub static DEBUG: bool = true;
 
 
-pub fn parse_doc<R: std::io::Read>(data: &mut R) -> Document {
+pub fn parse_document<R: std::io::Read>(data: &mut R) -> Document {
 	let parse: markup5ever_rcdom::RcDom = html5ever::parse_document(markup5ever_rcdom::RcDom::default(), Default::default())
 		.from_utf8()
 		.read_from(data)
@@ -55,13 +55,13 @@ mod tests {
 	pub use crate::context::Evaluation;
 	pub use crate::parser::Tokenizer;
 	pub use crate::factory::{Factory, Document};
-	pub use crate::parse_doc;
+	pub use crate::parse_document;
 
 	#[test]
 	fn paths() {
-		let doc = parse_doc(&mut File::open("./doc/example.html").expect("File::open"));
+		let doc = parse_document(&mut File::open("./doc/example.html").expect("File::open"));
 
-		let factory = Factory::new("//head/title", &doc, doc.root.clone());
+		let factory = Factory::new("//head/title", &doc, &doc.root);
 		println!("{:?}", factory.produce().expect("prod").collect_nodes());
 
 		println!("Location Paths (Unabbreviated Syntax)");
