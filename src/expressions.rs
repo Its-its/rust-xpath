@@ -317,20 +317,17 @@ impl Step {
 			None => return Ok(None)
 		};
 
-		let mut node = found_node.node;
+		let mut eval = context.new_evaluation_from_with_pos(&found_node.node, found_node.position);
+		eval.is_last_node = state.is_finished();
 
 		// Check specifiers.
 		for predicate in &mut self.predicates {
-			let mut eval = context.new_evaluation_from_with_pos(node, found_node.position);
-			eval.is_last_node = state.is_finished();
-
-			node = match predicate.select(eval)? {
-				Some(v) => v,
-				None => return Ok(Some(None))
+			if let Some(false) = predicate.matches_eval(&eval)? {
+				return Ok(Some(None));
 			}
 		}
 
-		Ok(Some(Some(node)))
+		Ok(Some(Some(found_node.node)))
 	}
 }
 
@@ -340,18 +337,7 @@ impl Step {
 struct Predicate(ExpressionArg);
 
 impl Predicate {
-	fn select(
-		&mut self,
-		ctx: Evaluation
-	) -> Result<Option<Node>> {
-		if res_opt_catch!(self.matches_eval(&ctx)) {
-			Ok(Some(ctx.node))
-		} else {
-			Ok(None)
-		}
-	}
-
-	fn matches_eval(&mut self, context: &Evaluation<'_>) -> Result<Option<bool>> {
+	fn matches_eval(&mut self, context: &Evaluation) -> Result<Option<bool>> {
 		let value = res_opt_catch!(self.0.next_eval(context));
 
 		Ok(Some(match value {

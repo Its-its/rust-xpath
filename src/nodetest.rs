@@ -8,7 +8,7 @@ use markup5ever::{QualName, Namespace as Ns, LocalName};
 use crate::{Evaluation, Node as DomNode};
 
 pub trait NodeTest: fmt::Debug {
-	fn test(&self, context: &Evaluation) -> Option<DomNode>;
+	fn test<'a>(&self, context: &Evaluation<'a>) -> Option<&'a DomNode>;
 }
 
 
@@ -87,11 +87,11 @@ impl Attribute {
 }
 
 impl NodeTest for Attribute {
-	fn test(&self, context: &Evaluation) -> Option<DomNode> {
+	fn test<'a>(&self, context: &Evaluation<'a>) -> Option<&'a DomNode> {
 		if context.node.is_attribute() {
 			if let Some(attr) = context.node.attribute() {
 				if self.name_test.is_match(context, &attr.attr.name) {
-					return Some(context.node.clone());
+					return Some(&context.node);
 				}
 			}
 		}
@@ -136,9 +136,9 @@ impl Namespace {
 }
 
 impl NodeTest for Namespace {
-	fn test(&self, context: &Evaluation) -> Option<DomNode> {
+	fn test<'a>(&self, context: &Evaluation<'a>) -> Option<&'a DomNode> {
 		if context.node.is_namespace() && self.name_test.is_match(context, &QualName::new(None, Ns::from(""), LocalName::from(context.node.prefix()))) {
-			Some(context.node.clone())
+			Some(&context.node)
 		} else {
 			None
 		}
@@ -157,10 +157,10 @@ impl Element {
 }
 
 impl NodeTest for Element {
-	fn test(&self, context: &Evaluation) -> Option<DomNode> {
+	fn test<'a>(&self, context: &Evaluation<'a>) -> Option<&'a DomNode> {
 		if let Some(name) = context.node.name() {
 			if context.node.is_element() && self.name_test.is_match(context, &name) {
-				return Some(context.node.clone());
+				return Some(&context.node);
 			}
 		}
 
@@ -173,8 +173,8 @@ impl NodeTest for Element {
 pub struct Node;
 
 impl NodeTest for Node {
-	fn test(&self, context: &Evaluation) -> Option<DomNode> {
-		Some(context.node.clone())
+	fn test<'a>(&self, context: &Evaluation<'a>) -> Option<&'a DomNode> {
+		Some(&context.node)
 	}
 }
 
@@ -183,9 +183,9 @@ impl NodeTest for Node {
 pub struct Text;
 
 impl NodeTest for Text {
-	fn test(&self, context: &Evaluation) -> Option<DomNode> {
+	fn test<'a>(&self, context: &Evaluation<'a>) -> Option<&'a DomNode> {
 		if let DomNode::Text(_) = context.node {
-			Some(context.node.clone())
+			Some(&context.node)
 		} else {
 			None
 		}
@@ -197,9 +197,9 @@ impl NodeTest for Text {
 pub struct Comment;
 
 impl NodeTest for Comment {
-	fn test(&self, context: &Evaluation) -> Option<DomNode> {
+	fn test<'a>(&self, context: &Evaluation<'a>) -> Option<&'a DomNode> {
 		if let DomNode::Comment(_) = context.node {
-			Some(context.node.clone())
+			Some(&context.node)
 		} else {
 			None
 		}
@@ -218,11 +218,11 @@ impl ProcessingInstruction {
 }
 
 impl NodeTest for ProcessingInstruction {
-	fn test(&self, context: &Evaluation) -> Option<DomNode> {
+	fn test<'a>(&self, context: &Evaluation<'a>) -> Option<&'a DomNode> {
 		if context.node.is_processing_instruction() {
 			match (self.target.as_deref(), context.node.target()) {
-				(Some(name), Some(ref context_target)) if name == context_target => Some(context.node.clone()),
-				(None, _) => Some(context.node.clone()),
+				(Some(name), Some(ref context_target)) if name == context_target => Some(&context.node),
+				(None, _) => Some(&context.node),
 				_ => None
 			}
 		} else {

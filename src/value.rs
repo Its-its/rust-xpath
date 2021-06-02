@@ -512,8 +512,8 @@ impl Node {
 	}
 
 
-	pub fn evaluate_from<'a, S: Into<String>>(&self, search: S, doc: &'a Document) -> Result<ProduceIter<'a>> {
-		doc.evaluate_from(search, self.clone())
+	pub fn evaluate_from<'a, S: Into<String>>(&'a self, search: S, doc: &'a Document) -> Result<ProduceIter<'a>> {
+		doc.evaluate_from(search, self)
 	}
 }
 
