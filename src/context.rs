@@ -165,7 +165,7 @@ pub struct NodeSearchState {
 
 	pub found_count: usize,
 
-	cached_nodes: Option<Vec<Node>>
+	cached_nodes: Option<Vec<Node>> // TODO: Remove.
 }
 
 impl NodeSearchState {
@@ -224,20 +224,7 @@ impl NodeSearchState {
 			}
 
 			AxisName::Child => {
-				// Get or Create a cache of Nodes.
-				let children = if let Some(cache) = self.cached_nodes.as_mut() {
-					cache
-				} else {
-					// Cache Nodes and reverse the array so we can .pop() from start to end.
-					let mut nodes = self.node.children();
-					nodes.reverse();
-
-					self.cached_nodes = Some(nodes);
-
-					self.cached_nodes.as_mut().unwrap()
-				};
-
-				while let Some(child) = children.pop() {
+				if let Some(child) = self.node.get_child(self.offset) {
 					self.offset += 1;
 
 					let new_context = eval.new_evaluation_from_with_pos(&child, self.offset);
@@ -249,21 +236,7 @@ impl NodeSearchState {
 			}
 
 			AxisName::Descendant => {
-				// Get or Create a cache of Nodes.
-				let children = if let Some(cache) = self.cached_nodes.as_mut() {
-					cache
-				} else {
-					// Cache Nodes and reverse the array so we can .pop() from start to end.
-					let mut nodes = self.node.children();
-					nodes.reverse();
-
-					self.cached_nodes = Some(nodes);
-
-					self.cached_nodes.as_mut().unwrap()
-				};
-
-
-				while let Some(child) = children.pop() {
+				if let Some(child) = self.node.get_child(self.offset) {
 					self.offset += 1;
 
 					let new_context = eval.new_evaluation_from_with_pos(&child, self.offset);

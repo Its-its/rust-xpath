@@ -1,7 +1,7 @@
 
 use std::iter::Peekable;
 
-use crate::{AxisName, DEBUG, Error, Evaluation, ExprToken, Node, NodeTest, NodeType, Nodeset, Operator, PrincipalNodeType, Result, Tokenizer, Value, value::PartialValue};
+use crate::{AxisName, DEBUG, Error, Evaluation, ExprToken, Node, NodeTest, NodeType, Nodeset, Operator, PrincipalNodeType, Result, Tokenizer, Value};
 use crate::expressions::{ExpressionArg, ContextNode, RootNode, Path, Step, Literal, Equal, NotEqual, And, Or, Function};
 use crate::nodetest;
 use crate::functions;
@@ -16,19 +16,19 @@ pub struct ProduceIter<'a> {
 }
 
 impl<'a> ProduceIter<'a> {
-	pub fn collect_nodes(mut self) -> Result<Value> {
-		Ok(Value::Nodeset(self.try_fold::<_, _, Result<Nodeset>>(
+	pub fn collect_nodes(mut self) -> Result<Nodeset> {
+		self.try_fold::<_, _, Result<Nodeset>>(
 			Nodeset::new(),
 			|mut set, v| {
 				set.push(v.into_node()?);
 				Ok(set)
 			}
-		)?))
+		)
 	}
 }
 
 impl<'a> Iterator for ProduceIter<'a> {
-	type Item = PartialValue;
+	type Item = Value;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.expr.next_eval(&self.eval).ok().flatten()
@@ -457,13 +457,13 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 		// self.parse_string_literal(step)
 		if step.is_next_token_func(|i| i.is_literal()) {
 			let value = return_value!(step, ExprToken::Literal);
-			return Ok(Some(Box::new(Literal::from(PartialValue::String(value)))));
+			return Ok(Some(Box::new(Literal::from(Value::String(value)))));
 		}
 
 		// self.parse_numeric_literal(step)
 		if step.is_next_token_func(|i| i.is_number()) {
 			let value = return_value!(step, ExprToken::Number);
-			return Ok(Some(Box::new(Literal::from(PartialValue::Number(value)))));
+			return Ok(Some(Box::new(Literal::from(Value::Number(value)))));
 		}
 
 

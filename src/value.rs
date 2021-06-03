@@ -9,141 +9,16 @@ use html5ever::serialize;
 use crate::{Document, Error, factory::ProduceIter};
 use crate::result::{Result, ValueError};
 
+
 #[derive(Debug, Clone)]
 pub enum Value {
-	Boolean(bool),
-	Number(f64),
-	String(String),
-	Nodeset(Nodeset)
-}
-
-impl Value {
-	pub fn as_nodeset(&self) -> Result<&Nodeset> {
-		match self {
-			Value::Nodeset(s) =>  Ok(s),
-			_ => Err(ValueError::Nodeset.into())
-		}
-	}
-
-	pub fn into_nodeset(self) -> Result<Nodeset> {
-		match self {
-			Value::Nodeset(s) =>  Ok(s),
-			_ => Err(ValueError::Nodeset.into())
-		}
-	}
-
-	pub fn as_boolean(&self) -> Result<bool> {
-		match self {
-			Value::Boolean(v) =>  Ok(*v),
-			_ => Err(ValueError::Boolean.into())
-		}
-	}
-
-	pub fn as_number(&self) -> Result<f64> {
-		match self {
-			Value::Number(v) =>  Ok(*v),
-			_ => Err(ValueError::Number.into())
-		}
-	}
-
-	pub fn as_string(&self) -> Result<&str> {
-		match self {
-			Value::String(v) =>  Ok(v),
-			_ => Err(ValueError::String.into())
-		}
-	}
-
-	pub fn into_string(self) -> Result<String> {
-		match self {
-			Value::String(v) =>  Ok(v),
-			_ => Err(ValueError::String.into())
-		}
-	}
-
-	pub fn into_vec_string(self) -> Result<Vec<String>> {
-		let value_iter = self.into_nodeset()?
-			.into_iter()
-			.map(|i| i.value().and_then(|v| v.into_string()))
-			.collect::<Result<Vec<String>>>()?;
-
-		Ok(value_iter)
-	}
-
-	/// Checks `Value::String` and `Value::Nodeset` for a string value.
-	pub fn get_first_string(self) -> Result<String> {
-		match self {
-			Value::String(v) =>  Ok(v),
-			this => {
-				let mut array = this.into_vec_string()?;
-
-				if !array.is_empty() {
-					Ok(array.remove(0))
-				} else {
-					Err(ValueError::String.into())
-				}
-			}
-		}
-	}
-}
-
-impl PartialEq for Value {
-	fn eq(&self, other: &Value) -> bool {
-		match (self, other) {
-			(Value::Number(v1), Value::Number(v2)) => v1 == v2,
-
-			// Noteset == String
-			(Value::Nodeset(set), Value::String(value)) |
-			(Value::String(value), Value::Nodeset(set)) => {
-				if set.is_empty() {
-					return false;
-				}
-
-				set.iter()
-				.any(|node| {
-					// TODO: No.
-					if &format!("{:?}", node) == value {
-						true
-					} else {
-						match node {
-							Node::Attribute(attr) => {
-								attr.value() == value
-							}
-
-							Node::Text(handle) => {
-								let upgrade = handle.upgrade().unwrap();
-								if let NodeData::Text { contents } = &upgrade.data {
-									contents.try_borrow().map(|v| v.as_ref() == value).unwrap_or_default()
-								} else {
-									false
-								}
-							}
-
-							_ => false
-						}
-					}
-				})
-			}
-
-			(Value::Nodeset(set1), Value::Nodeset(set2)) => {
-				// TODO: No.
-				format!("{:?}", set1) == format!("{:?}", set2)
-			}
-
-			_ => false
-		}
-	}
-}
-
-
-#[derive(Debug, Clone)]
-pub enum PartialValue {
 	Boolean(bool),
 	Number(f64),
 	String(String),
 	Node(Node)
 }
 
-impl PartialValue {
+impl Value {
 	pub fn is_something(&self) -> bool {
 		match self {
 			Self::Boolean(v) => *v,
@@ -200,19 +75,7 @@ impl PartialValue {
 	}
 }
 
-impl Into<Value> for PartialValue {
-	fn into(self) -> Value {
-		match self {
-			Self::Boolean(v) => Value::Boolean(v),
-			Self::Number(v) => Value::Number(v),
-			Self::String(v) => Value::String(v),
-			Self::Node(v) => Value::Nodeset(vec![v].into()),
-		}
-	}
-}
-
-
-impl PartialEq for PartialValue {
+impl PartialEq for Value {
 	fn eq(&self, other: &Self) -> bool {
 		match (self, other) {
 			(Self::Number(v1), Self::Number(v2)) => v1 == v2,
@@ -457,6 +320,30 @@ impl Node {
 		}
 	}
 
+	pub fn get_child(&self, index: usize) -> Option<Node> {
+		match self {
+			Node::Root(handle) => {
+				let node = handle.as_ref();
+
+				let children = node.children.borrow();
+
+				Some(children.get(index)?.into())
+			}
+
+			Node::Text(handle) |
+			Node::Comment(handle) |
+			Node::DocType(handle) |
+			Node::Element(handle) => {
+				let node = handle.upgrade()?;
+
+				let children = node.children.borrow();
+
+				Some(children.get(index)?.into())
+			}
+
+			_ => unimplemented!("Node::children(\"{}\")", self.enum_name())
+		}
+	}
 
 	pub fn name(&self) -> Option<QualName> {
 		match self {
@@ -620,6 +507,7 @@ fn find_nodes_from_parent<F: Fn(usize, usize) -> bool>(node: &Node, f_capture: F
 
 		let children = parent.children.borrow();
 
+		// Finds parent position.
 		let i = match children
 			.iter()
 			.enumerate()
@@ -630,11 +518,11 @@ fn find_nodes_from_parent<F: Fn(usize, usize) -> bool>(node: &Node, f_capture: F
 		};
 
 		children
-		.iter()
-		.enumerate()
-		.filter(|c| f_capture(c.0, i))
-		.map(|i| i.1.into())
-		.collect()
+			.iter()
+			.enumerate()
+			.filter(|c| f_capture(c.0, i))
+			.map(|i| i.1.into())
+			.collect()
 	} else {
 		Vec::new()
 	}

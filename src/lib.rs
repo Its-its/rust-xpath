@@ -24,7 +24,7 @@ pub mod nodetest;
 
 pub use nodetest::{NodeTest, NameTest};
 pub use result::{Result, Error};
-pub use value::{PartialValue, Value, Node, Nodeset};
+pub use value::{Value, Node, Nodeset};
 pub use tokens::{ExprToken, AxisName, NodeType, Operator, PrincipalNodeType};
 pub use context::Evaluation;
 pub use parser::Tokenizer;

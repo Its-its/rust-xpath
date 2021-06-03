@@ -24,7 +24,7 @@
 
 use std::fmt;
 
-use crate::{context::{NodeSearch, NodeSearchState}, functions::{self, Args}, value::PartialValue};
+use crate::{context::{NodeSearch, NodeSearchState}, functions::{self, Args}, value::Value};
 use crate::{AxisName, Evaluation, Node, NodeTest, Result};
 
 pub type CallFunction = fn(ExpressionArg, ExpressionArg) -> ExpressionArg;
@@ -32,7 +32,7 @@ pub type ExpressionArg = Box<dyn Expression>;
 
 
 pub trait Expression: fmt::Debug {
-	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>>;
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>>;
 
 	fn count(&mut self, eval: &Evaluation) -> Result<usize> {
 		let mut count = 0;
@@ -44,7 +44,7 @@ pub trait Expression: fmt::Debug {
 		Ok(count)
 	}
 
-	fn collect(&mut self, eval: &Evaluation) -> Result<Vec<PartialValue>> {
+	fn collect(&mut self, eval: &Evaluation) -> Result<Vec<Value>> {
 		let mut nodes = Vec::new();
 
 		while let Some(node) = self.next_eval(eval)? {
@@ -71,11 +71,11 @@ impl Equal {
 }
 
 impl Expression for Equal {
-	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		let left_value = res_opt_catch!(self.left.next_eval(eval));
 		let right_value = res_opt_catch!(self.right.next_eval(eval));
 
-		Ok(Some(PartialValue::Boolean(left_value == right_value)))
+		Ok(Some(Value::Boolean(left_value == right_value)))
 	}
 }
 
@@ -93,11 +93,11 @@ impl NotEqual {
 }
 
 impl Expression for NotEqual {
-	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		let left_value = res_opt_catch!(self.left.next_eval(eval));
 		let right_value = res_opt_catch!(self.right.next_eval(eval));
 
-		Ok(Some(PartialValue::Boolean(left_value != right_value)))
+		Ok(Some(Value::Boolean(left_value != right_value)))
 	}
 }
 
@@ -115,11 +115,11 @@ impl And {
 }
 
 impl Expression for And {
-	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		let left_value = res_opt_catch!(self.left.next_eval(eval));
 		let right_value = res_opt_catch!(self.right.next_eval(eval));
 
-		Ok(Some(PartialValue::Boolean(left_value.as_boolean()? && right_value.as_boolean()?)))
+		Ok(Some(Value::Boolean(left_value.as_boolean()? && right_value.as_boolean()?)))
 	}
 }
 
@@ -138,27 +138,27 @@ impl Or {
 }
 
 impl Expression for Or {
-	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		let left_value = res_opt_catch!(self.left.next_eval(eval));
 		let right_value = res_opt_catch!(self.right.next_eval(eval));
 
-		Ok(Some(PartialValue::Boolean(left_value.as_boolean()? || right_value.as_boolean()?)))
+		Ok(Some(Value::Boolean(left_value.as_boolean()? || right_value.as_boolean()?)))
 	}
 }
 
 // Primary Expressions
 
 #[derive(Debug)]
-pub struct Literal(PartialValue);
+pub struct Literal(Value);
 
-impl From<PartialValue> for Literal {
-	fn from(value: PartialValue) -> Self {
+impl From<Value> for Literal {
+	fn from(value: Value) -> Self {
 		Literal(value)
 	}
 }
 
 impl Expression for Literal {
-	fn next_eval(&mut self, _: &Evaluation) -> Result<Option<PartialValue>> {
+	fn next_eval(&mut self, _: &Evaluation) -> Result<Option<Value>> {
 		Ok(Some(self.0.clone()))
 	}
 }
@@ -170,8 +170,8 @@ impl Expression for Literal {
 pub struct RootNode;
 
 impl Expression for RootNode {
-	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>> {
-		Ok(Some(PartialValue::Node(eval.root().clone())))
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
+		Ok(Some(Value::Node(eval.root().clone())))
 	}
 }
 
@@ -180,9 +180,9 @@ impl Expression for RootNode {
 pub struct ContextNode;
 
 impl Expression for ContextNode {
-	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		// TODO: Figure out. Cannot clone an Rc
-		Ok(Some(PartialValue::Node(eval.node.clone())))
+		Ok(Some(Value::Node(eval.node.clone())))
 	}
 }
 
@@ -267,12 +267,12 @@ impl Path {
 }
 
 impl Expression for Path {
-	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		let found_node = res_opt_catch!(self.find_next_node(eval));
 
 		//
 
-		Ok(Some(PartialValue::Node(found_node)))
+		Ok(Some(Value::Node(found_node)))
 	}
 }
 
@@ -342,7 +342,7 @@ impl Predicate {
 
 		Ok(Some(match value {
 			// Is Node in the correct position? ex: //node[3]
-			PartialValue::Number(v) => context.node_position == v as usize,
+			Value::Number(v) => context.node_position == v as usize,
 			// Otherwise ensure a value properly exists.
 			_ => value.is_something()
 		}))
@@ -360,7 +360,7 @@ impl Function {
 }
 
 impl Expression for Function {
-	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<PartialValue>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		self.0.exec(eval, Args::new(self.1.as_mut())).map(Some)
 	}
 }
