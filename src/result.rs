@@ -1,5 +1,7 @@
 use thiserror::Error as ThisError;
 
+use std::io::{Error as IoErrorBase, ErrorKind};
+
 use crate::ExprToken;
 
 
@@ -8,6 +10,9 @@ pub type Result<I> = std::result::Result<I, Error>;
 
 #[derive(Debug, Clone, PartialEq, ThisError)]
 pub enum Error {
+	#[error("IO Error")]
+	Io(ErrorKind),
+
 	#[error("Token Error")]
 	Token,
 	#[error("Empty Input")]
@@ -36,6 +41,12 @@ pub enum Error {
 impl From<ValueError> for Error {
 	fn from(err: ValueError) -> Error {
 		Error::InvalidValue(err)
+	}
+}
+
+impl From<IoErrorBase> for Error {
+	fn from(err: IoErrorBase) -> Error {
+		Error::Io(err.kind())
 	}
 }
 

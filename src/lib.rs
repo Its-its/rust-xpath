@@ -1,4 +1,7 @@
+use std::io::Read;
+
 use html5ever::tendril::TendrilSink;
+use markup5ever_rcdom::RcDom;
 
 
 
@@ -22,25 +25,26 @@ pub mod functions;
 pub mod expressions;
 pub mod nodetest;
 
-pub use nodetest::{NodeTest, NameTest};
+pub(crate) use context::Evaluation;
+pub(crate) use value::{Node, Nodeset};
+pub(crate) use tokens::{ExprToken, AxisName, NodeType, Operator, PrincipalNodeType};
+pub(crate) use parser::Tokenizer;
+pub(crate) use nodetest::{NodeTest, NameTest};
+
 pub use result::{Result, Error};
-pub use value::{Value, Node, Nodeset};
-pub use tokens::{ExprToken, AxisName, NodeType, Operator, PrincipalNodeType};
-pub use context::Evaluation;
-pub use parser::Tokenizer;
+pub use value::Value;
 pub use factory::{Factory, Document};
 
 
 pub static DEBUG: bool = true;
 
 
-pub fn parse_document<R: std::io::Read>(data: &mut R) -> Document {
-	let parse: markup5ever_rcdom::RcDom = html5ever::parse_document(markup5ever_rcdom::RcDom::default(), Default::default())
+pub fn parse_document<R: Read>(data: &mut R) -> Result<Document> {
+	let parse: RcDom = html5ever::parse_document(RcDom::default(), Default::default())
 		.from_utf8()
-		.read_from(data)
-		.expect("html5ever");
+		.read_from(data)?;
 
-	Document::new(parse.document.into())
+	Ok(Document::new(parse.document.into()))
 }
 
 
@@ -59,7 +63,7 @@ mod tests {
 
 	#[test]
 	fn paths() {
-		let doc = parse_document(&mut File::open("./doc/example.html").expect("File::open"));
+		let doc = parse_document(&mut File::open("./doc/example.html").expect("File::open")).unwrap();
 
 		let factory = Factory::new("//head/title", &doc, &doc.root);
 		println!("{:?}", factory.produce().expect("prod").collect_nodes());
