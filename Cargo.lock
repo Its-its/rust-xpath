@@ -447,7 +447,7 @@ dependencies = [
 
 [[package]]
 name = "xpather"
-version = "0.3.0-beta.0"
+version = "0.3.0-beta.1"
 dependencies = [
  "html5ever",
  "markup5ever",
