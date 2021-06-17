@@ -36,9 +36,6 @@ pub use value::Value;
 pub use factory::{Factory, Document};
 
 
-pub static DEBUG: bool = true;
-
-
 pub fn parse_document<R: Read>(data: &mut R) -> Result<Document> {
 	let parse: RcDom = html5ever::parse_document(RcDom::default(), Default::default())
 		.from_utf8()

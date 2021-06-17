@@ -1,7 +1,7 @@
 
 use std::iter::Peekable;
 
-use crate::{AxisName, DEBUG, Error, Evaluation, ExprToken, Node, NodeTest, NodeType, Nodeset, Operator, PrincipalNodeType, Result, Tokenizer, Value};
+use crate::{AxisName, Error, Evaluation, ExprToken, Node, NodeTest, NodeType, Nodeset, Operator, PrincipalNodeType, Result, Tokenizer, Value};
 use crate::expressions::{ExpressionArg, ContextNode, RootNode, Path, Step, Literal, Equal, NotEqual, And, Or, Function};
 use crate::nodetest;
 use crate::functions;
@@ -156,12 +156,10 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 		self.tokenize();
 
 		if self.error.is_none() {
-			if DEBUG {
-				println!("Steps");
-				self.token_steps
-				.iter()
-				.for_each(|t| println!(" - {:?}", t));
-			}
+			// println!("Steps");
+			// self.token_steps
+			// .iter()
+			// .for_each(|t| println!(" - {:?}", t));
 
 			let mut stepper = Stepper::new(self.token_steps.clone().into_iter().peekable());
 
