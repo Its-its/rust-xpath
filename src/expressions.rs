@@ -139,14 +139,65 @@ impl Or {
 
 impl Expression for Or {
 	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
-		let left_value = res_opt_catch!(self.left.next_eval(eval));
-		let right_value = res_opt_catch!(self.right.next_eval(eval));
+		let left_value = self.left.next_eval(eval)?;
+		let right_value = self.right.next_eval(eval)?;
 
-		Ok(Some(Value::Boolean(left_value.as_boolean()? || right_value.as_boolean()?)))
+		match (left_value, right_value) {
+			(Some(value), None) |
+			(None, Some(value)) => {
+				Ok(Some(Value::Boolean(value.as_boolean()?)))
+			}
+
+			(Some(value1), Some(value2)) => {
+				Ok(Some(Value::Boolean(value1.as_boolean()? || value2.as_boolean()?)))
+			}
+
+			_ => Ok(None)
+		}
 	}
 }
 
 // Primary Expressions
+
+#[derive(Debug)]
+pub struct Union {
+	left: ExpressionArg,
+	right: ExpressionArg,
+	skip_left: bool
+}
+
+impl Union {
+	pub fn new(left: ExpressionArg, right: ExpressionArg) -> Self {
+		Self { left, right, skip_left: false }
+	}
+}
+
+impl Expression for Union {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
+		println!("CALLED");
+
+		if !self.skip_left {
+			let left_value = self.left.next_eval(eval)?;
+
+			if left_value.is_some() {
+				println!("\tRETURNED 1");
+				return Ok(left_value);
+			}
+
+			self.skip_left = true;
+		}
+
+		let right_value = self.right.next_eval(eval)?;
+
+		if right_value.is_some() {
+			println!("\tRETURNED 2");
+			return Ok(right_value);
+		}
+
+		Ok(None)
+	}
+}
+
 
 #[derive(Debug)]
 pub struct Literal(Value);

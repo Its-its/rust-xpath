@@ -2,7 +2,7 @@
 use std::iter::Peekable;
 
 use crate::{AxisName, Error, Evaluation, ExprToken, Node, NodeTest, NodeType, Nodeset, Operator, PrincipalNodeType, Result, Tokenizer, Value};
-use crate::expressions::{ExpressionArg, ContextNode, RootNode, Path, Step, Literal, Equal, NotEqual, And, Or, Function};
+use crate::expressions::{And, ContextNode, Equal, ExpressionArg, Function, Literal, NotEqual, Or, Path, RootNode, Step, Union};
 use crate::nodetest;
 use crate::functions;
 
@@ -156,10 +156,6 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 		self.tokenize();
 
 		if self.error.is_none() {
-			// println!("Steps");
-			// self.token_steps
-			// .iter()
-			// .for_each(|t| println!(" - {:?}", t));
 
 			let mut stepper = Stepper::new(self.token_steps.clone().into_iter().peekable());
 
@@ -168,7 +164,6 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 
 				match expr {
 					Some(expr) => {
-						// if DEBUG { println!("Parsed: {:#?}", expr); }
 						return Ok(ProduceIter::<'eval> { expr, eval: self.eval });
 					}
 
@@ -248,10 +243,10 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 	fn parse_relational_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
 		let left_expr = self.parse_additive_expression(step)?;
 
-		// Self '<' AdditiveExpr
-		// Self '>' AdditiveExpr
-		// Self '<=' AdditiveExpr
-		// Self '>=' AdditiveExpr
+		// TODO: Self '<' AdditiveExpr
+		// TODO: Self '>' AdditiveExpr
+		// TODO: Self '<=' AdditiveExpr
+		// TODO: Self '>=' AdditiveExpr
 
 		Ok(left_expr)
 	}
@@ -260,8 +255,8 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 	fn parse_additive_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
 		let left_expr = self.parse_multiplicative_expression(step)?;
 
-		// Self '+' MultiplicativeExpr
-		// Self '-' MultiplicativeExpr
+		// TODO: Self '+' MultiplicativeExpr
+		// TODO: Self '-' MultiplicativeExpr
 
 		Ok(left_expr)
 	}
@@ -270,9 +265,9 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 	fn parse_multiplicative_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
 		let left_expr = self.parse_unary_expression(step)?;
 
-		// Self MultiplyOperator UnaryExpr
-		// Self 'div' UnaryExpr
-		// Self 'mod' UnaryExpr
+		// TODO: Self MultiplyOperator UnaryExpr
+		// TODO: Self 'div' UnaryExpr
+		// TODO: Self 'mod' UnaryExpr
 
 		Ok(left_expr)
 	}
@@ -289,9 +284,16 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 
 	// UnionExpr			::= PathExpr | Self '|' PathExpr
 	fn parse_union_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		self.parse_path_expression(step)
+		let left_expr = self.parse_path_expression(step)?;
 
-		//  Self '|' PathExpr
+		// Self '|' PathExpr
+		if step.consume_if_next_token_is(Operator::Pipe)? {
+			let right_expr = self.parse_path_expression(step)?;
+
+			return Ok(Some(Box::new(Union::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
+		}
+
+		Ok(left_expr)
 	}
 
 

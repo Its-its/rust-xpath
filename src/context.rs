@@ -224,7 +224,7 @@ impl NodeSearchState {
 			}
 
 			AxisName::Child => {
-				if let Some(child) = self.node.get_child(self.offset) {
+				while let Some(child) = self.node.get_child(self.offset) {
 					self.offset += 1;
 
 					let new_context = eval.new_evaluation_from_with_pos(&child, self.offset);

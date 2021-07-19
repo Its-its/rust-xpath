@@ -137,7 +137,13 @@ impl Namespace {
 
 impl NodeTest for Namespace {
 	fn test<'a>(&self, context: &Evaluation<'a>) -> Option<&'a DomNode> {
-		if context.node.is_namespace() && self.name_test.is_match(context, &QualName::new(None, Ns::from(""), LocalName::from(context.node.prefix()))) {
+		if context.node.is_namespace() &&
+			self.name_test.is_match(
+				context,
+				&QualName::new(None, Ns::from(""),
+				LocalName::from(context.node.prefix()))
+			)
+		{
 			Some(&context.node)
 		} else {
 			None
