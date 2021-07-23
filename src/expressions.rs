@@ -328,13 +328,10 @@ impl Union {
 
 impl Expression for Union {
 	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
-		println!("CALLED");
-
 		if !self.skip_left {
 			let left_value = self.left.next_eval(eval)?;
 
 			if left_value.is_some() {
-				println!("\tRETURNED 1");
 				return Ok(left_value);
 			}
 
@@ -344,7 +341,6 @@ impl Expression for Union {
 		let right_value = self.right.next_eval(eval)?;
 
 		if right_value.is_some() {
-			println!("\tRETURNED 2");
 			return Ok(right_value);
 		}
 

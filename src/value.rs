@@ -49,12 +49,16 @@ impl Value {
 	pub fn as_boolean(&self) -> Result<bool> {
 		match self {
 			Self::Boolean(v) =>  Ok(*v),
+			Self::Number(v) if *v == 0.0 => Ok(false),
+			#[allow(clippy::float_cmp)]
+			Self::Number(v) if *v == 1.0 => Ok(true),
 			_ => Err(ValueError::Boolean.into())
 		}
 	}
 
 	pub fn as_number(&self) -> Result<f64> {
 		match self {
+			Self::Boolean(v) => Ok(if *v { 1.0 } else { 0.0 }),
 			Self::Number(v) =>  Ok(*v),
 			_ => Err(ValueError::Number.into())
 		}

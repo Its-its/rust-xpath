@@ -168,7 +168,7 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 
 				match expr {
 					Some(expr) => {
-						// println!("Parsed: {:#?}", expr);
+						println!("Parsed: {:#?}", expr);
 						return Ok(ProduceIter::<'eval> { expr, eval: self.eval });
 					}
 
@@ -203,7 +203,10 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 		if step.consume_if_next_token_is(Operator::Or)? {
 			let right_expr = self.parse_relational_expression(step)?;
 
-			return Ok(Some(Box::new(Or::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
+			return Ok(Some(Box::new(Or::new(
+				left_expr.unwrap(),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Or.into()))?
+			))));
 		}
 
 		Ok(left_expr)
@@ -217,7 +220,10 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 		if step.consume_if_next_token_is(Operator::And)? {
 			let right_expr = self.parse_relational_expression(step)?;
 
-			return Ok(Some(Box::new(And::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
+			return Ok(Some(Box::new(And::new(
+				left_expr.unwrap(),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::And.into()))?
+			))));
 		}
 
 		Ok(left_expr)
@@ -231,14 +237,20 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 		if step.consume_if_next_token_is(Operator::Equal)? {
 			let right_expr = self.parse_relational_expression(step)?;
 
-			return Ok(Some(Box::new(Equal::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
+			return Ok(Some(Box::new(Equal::new(
+				left_expr.unwrap(),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Equal.into()))?
+			))));
 		}
 
 		// Self '!=' RelationalExpr
 		if step.consume_if_next_token_is(Operator::DoesNotEqual)? {
 			let right_expr = self.parse_relational_expression(step)?;
 
-			return Ok(Some(Box::new(NotEqual::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
+			return Ok(Some(Box::new(NotEqual::new(
+				left_expr.unwrap(),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::DoesNotEqual.into()))?
+			))));
 		}
 
 		Ok(left_expr)
@@ -252,28 +264,45 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 		if step.consume_if_next_token_is(Operator::LessThan)? {
 			let right_expr = self.parse_additive_expression(step)?;
 
-			return Ok(Some(Box::new(LessThan::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
+			return Ok(Some(Box::new(LessThan::new(
+				left_expr.unwrap(),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::LessThan.into()))?
+			))));
 		}
 
 		// Self '<=' AdditiveExpr
 		if step.consume_if_next_token_is(Operator::LessThanOrEqual)? {
-			let right_expr = self.parse_additive_expression(step)?;
+			let right_expr = self.parse_relational_expression(step)?;
 
-			return Ok(Some(Box::new(LessThanEqual::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
+			return Ok(Some(Box::new(LessThanEqual::new(
+				left_expr.unwrap(),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::LessThanOrEqual.into()))?
+			))));
 		}
 
 		// Self '>' AdditiveExpr
 		if step.consume_if_next_token_is(Operator::GreaterThan)? {
-			let right_expr = self.parse_additive_expression(step)?;
+			let right_expr = self.parse_relational_expression(step)?;
 
-			return Ok(Some(Box::new(GreaterThan::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
+			return Ok(Some(Box::new(GreaterThan::new(
+				left_expr.unwrap(),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::GreaterThan.into()))?
+			))));
 		}
+
+		// TODO
+		// Value      3 > 2  > 1   ||   3 > 2 = false (0) > 1 = false
+		// currently  3 > (2 > 1)
+		// should be (3 > 2) > 1
 
 		// Self '>=' AdditiveExpr
 		if step.consume_if_next_token_is(Operator::GreaterThanOrEqual)? {
-			let right_expr = self.parse_additive_expression(step)?;
+			let right_expr = self.parse_relational_expression(step)?;
 
-			return Ok(Some(Box::new(GreaterThanEqual::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
+			return Ok(Some(Box::new(GreaterThanEqual::new(
+				left_expr.unwrap(),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::GreaterThanOrEqual.into()))?
+			))));
 		}
 
 		Ok(left_expr)
@@ -287,14 +316,20 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 		if step.consume_if_next_token_is(Operator::Plus)? {
 			let right_expr = self.parse_multiplicative_expression(step)?;
 
-			return Ok(Some(Box::new(Addition::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
+			return Ok(Some(Box::new(Addition::new(
+				left_expr.unwrap(),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Plus.into()))?
+			))));
 		}
 
 		// Self '-' MultiplicativeExpr
 		if step.consume_if_next_token_is(Operator::Minus)? {
 			let right_expr = self.parse_multiplicative_expression(step)?;
 
-			return Ok(Some(Box::new(Subtraction::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
+			return Ok(Some(Box::new(Subtraction::new(
+				left_expr.unwrap(),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Minus.into()))?
+			))));
 		}
 
 
@@ -324,7 +359,7 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 
 			Ok(Some(Box::new(Subtraction::new(
 				Box::new(Literal::from(Value::Number(0.0))),
-				right_expr.ok_or(Error::MissingRightHandExpression)?
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Minus.into()))?
 			))))
 		} else {
 			self.parse_union_expression(step)
@@ -339,7 +374,10 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 		if step.consume_if_next_token_is(Operator::Pipe)? {
 			let right_expr = self.parse_path_expression(step)?;
 
-			return Ok(Some(Box::new(Union::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
+			return Ok(Some(Box::new(Union::new(
+				left_expr.unwrap(),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Pipe.into()))?
+			))));
 		}
 
 		Ok(left_expr)

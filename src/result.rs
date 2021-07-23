@@ -19,8 +19,8 @@ pub enum Error {
 	InputEmpty,
 	#[error("Trailing Slash")]
 	TrailingSlash,
-	#[error("Missing Right Hand Expression")]
-	MissingRightHandExpression,
+	#[error("Expected Right Hand Expression for {0:?}")]
+	ExpectedRightHandExpression(ExprToken),
 	#[error("Unexpected Token {0:?}")]
 	UnexpectedToken(ExprToken),
 	#[error("Invalid Value {0:?}")]
