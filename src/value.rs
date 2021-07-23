@@ -79,6 +79,8 @@ impl PartialEq for Value {
 	fn eq(&self, other: &Self) -> bool {
 		match (self, other) {
 			(Self::Number(v1), Self::Number(v2)) => v1 == v2,
+			(Self::Boolean(v1), Self::Boolean(v2)) => v1 == v2,
+			(Self::String(v1), Self::String(v2)) => v1 == v2,
 
 			// Noteset == String
 			(Self::Node(node), Self::String(value)) |
