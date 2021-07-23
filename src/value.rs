@@ -649,10 +649,9 @@ pub fn compare_nodes(left_upgrade: &NodeHandle, right_upgrade: &NodeHandle) -> b
 	// Find first position where it's false.
 	// If we found a non-equal child it'll return Some(pos)
 	// So we need to ensure it's None
-	l_children.iter()
-	.zip(r_children.iter())
-	.position(|c| !compare_nodes(c.0, c.1))
-	.is_none()
+	!l_children.iter()
+		.zip(r_children.iter())
+		.any(|c| !compare_nodes(c.0, c.1))
 }
 
 

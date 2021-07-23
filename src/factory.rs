@@ -313,12 +313,16 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 
 	// UnaryExpr			::= UnionExpr | '-' Self
 	fn parse_unary_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		if step.is_next_token(Operator::Minus) {
-			let _ = step.consume(Operator::Minus)?;
-		}
-		// TODO: If missing union after consuming minus.
+		if step.consume_if_next_token_is(Operator::Minus)? {
+			let right_expr = self.parse_union_expression(step)?;
 
-		self.parse_union_expression(step)
+			Ok(Some(Box::new(Subtraction::new(
+				Box::new(Literal::from(Value::Number(0.0))),
+				right_expr.ok_or(Error::MissingRightHandExpression)?
+			))))
+		} else {
+			self.parse_union_expression(step)
+		}
 	}
 
 	// UnionExpr			::= PathExpr | Self '|' PathExpr
