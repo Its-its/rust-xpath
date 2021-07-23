@@ -1,5 +1,6 @@
 
 use std::iter::Peekable;
+use std::ops::{Deref, DerefMut};
 
 use crate::{AxisName, Error, Evaluation, ExprToken, Node, NodeTest, NodeType, Nodeset, Operator, PrincipalNodeType, Result, Tokenizer, Value};
 use crate::expressions::{Addition, And, ContextNode, Equal, ExpressionArg, Function, GreaterThan, GreaterThanEqual, LessThan, LessThanEqual, Literal, NotEqual, Or, Path, RootNode, Step, Subtraction, Union};
@@ -156,6 +157,10 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 		self.tokenize();
 
 		if self.error.is_none() {
+			// println!("Steps");
+			// self.token_steps.iter().for_each(|t| println!("\t{:?}", t));
+			// println!();
+
 			let mut stepper = Stepper::new(self.token_steps.clone().into_iter().peekable());
 
 			if stepper.has_more_tokens() {
@@ -163,6 +168,7 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 
 				match expr {
 					Some(expr) => {
+						// println!("Parsed: {:#?}", expr);
 						return Ok(ProduceIter::<'eval> { expr, eval: self.eval });
 					}
 
@@ -700,10 +706,18 @@ impl<S: Iterator<Item = ExprToken>> Stepper<S> {
 	}
 }
 
-impl<S: Iterator<Item = ExprToken>> Iterator for Stepper<S> {
-	type Item = S::Item;
 
-	fn next(&mut self) -> Option<Self::Item> {
-		self.0.next()
+impl<S: Iterator<Item = ExprToken>> Deref for Stepper<S> {
+	type Target = Peekable<S>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.0
+	}
+}
+
+
+impl<S: Iterator<Item = ExprToken>> DerefMut for Stepper<S> {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.0
 	}
 }
