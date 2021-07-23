@@ -56,6 +56,159 @@ pub trait Expression: fmt::Debug {
 }
 
 
+
+
+macro_rules! res_opt_def_NAN {
+	($val:expr) => {
+		match $val? {
+			Some(v) => v,
+			None => return Ok(Some(Value::Number(f64::NAN)))
+		}
+	};
+}
+
+macro_rules! res_opt_def_false {
+	($val:expr) => {
+		match $val? {
+			Some(v) => v,
+			None => return Ok(Some(Value::Boolean(false)))
+		}
+	};
+}
+
+
+#[derive(Debug)]
+pub struct Addition {
+	left: ExpressionArg,
+	right: ExpressionArg
+}
+
+impl Addition {
+	pub fn new(left: ExpressionArg, right: ExpressionArg) -> Self {
+		Self { left, right }
+	}
+}
+
+impl Expression for Addition {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
+		let left_value = res_opt_def_NAN!(self.left.next_eval(eval));
+		let right_value = res_opt_def_NAN!(self.right.next_eval(eval));
+
+		Ok(Some(Value::Number(left_value.as_number()? + right_value.as_number()?)))
+	}
+}
+
+
+#[derive(Debug)]
+pub struct Subtraction {
+	left: ExpressionArg,
+	right: ExpressionArg
+}
+
+impl Subtraction {
+	pub fn new(left: ExpressionArg, right: ExpressionArg) -> Self {
+		Self { left, right }
+	}
+}
+
+impl Expression for Subtraction {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
+		let left_value = res_opt_def_NAN!(self.left.next_eval(eval));
+		let right_value = res_opt_def_NAN!(self.right.next_eval(eval));
+
+		Ok(Some(Value::Number(left_value.as_number()? - right_value.as_number()?)))
+	}
+}
+
+
+#[derive(Debug)]
+pub struct LessThan {
+	left: ExpressionArg,
+	right: ExpressionArg
+}
+
+impl LessThan {
+	pub fn new(left: ExpressionArg, right: ExpressionArg) -> Self {
+		Self { left, right }
+	}
+}
+
+impl Expression for LessThan {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
+		let left_value = res_opt_def_false!(self.left.next_eval(eval));
+		let right_value = res_opt_def_false!(self.right.next_eval(eval));
+
+		Ok(Some(Value::Boolean(left_value.as_number()? < right_value.as_number()?)))
+	}
+}
+
+
+#[derive(Debug)]
+pub struct LessThanEqual {
+	left: ExpressionArg,
+	right: ExpressionArg
+}
+
+impl LessThanEqual {
+	pub fn new(left: ExpressionArg, right: ExpressionArg) -> Self {
+		Self { left, right }
+	}
+}
+
+impl Expression for LessThanEqual {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
+		let left_value = res_opt_def_false!(self.left.next_eval(eval));
+		let right_value = res_opt_def_false!(self.right.next_eval(eval));
+
+		Ok(Some(Value::Boolean(left_value.as_number()? <= right_value.as_number()?)))
+	}
+}
+
+
+#[derive(Debug)]
+pub struct GreaterThan {
+	left: ExpressionArg,
+	right: ExpressionArg
+}
+
+impl GreaterThan {
+	pub fn new(left: ExpressionArg, right: ExpressionArg) -> Self {
+		Self { left, right }
+	}
+}
+
+impl Expression for GreaterThan {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
+		let left_value = res_opt_def_false!(self.left.next_eval(eval));
+		let right_value = res_opt_def_false!(self.right.next_eval(eval));
+
+		Ok(Some(Value::Boolean(left_value.as_number()? > right_value.as_number()?)))
+	}
+}
+
+
+#[derive(Debug)]
+pub struct GreaterThanEqual {
+	left: ExpressionArg,
+	right: ExpressionArg
+}
+
+impl GreaterThanEqual {
+	pub fn new(left: ExpressionArg, right: ExpressionArg) -> Self {
+		Self { left, right }
+	}
+}
+
+impl Expression for GreaterThanEqual {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
+		let left_value = res_opt_def_false!(self.left.next_eval(eval));
+		let right_value = res_opt_def_false!(self.right.next_eval(eval));
+
+		Ok(Some(Value::Boolean(left_value.as_number()? >= right_value.as_number()?)))
+	}
+}
+
+
 // Operations
 
 #[derive(Debug)]
@@ -72,8 +225,8 @@ impl Equal {
 
 impl Expression for Equal {
 	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
-		let left_value = res_opt_catch!(self.left.next_eval(eval));
-		let right_value = res_opt_catch!(self.right.next_eval(eval));
+		let left_value = res_opt_def_false!(self.left.next_eval(eval));
+		let right_value = res_opt_def_false!(self.right.next_eval(eval));
 
 		Ok(Some(Value::Boolean(left_value == right_value)))
 	}
@@ -94,8 +247,8 @@ impl NotEqual {
 
 impl Expression for NotEqual {
 	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
-		let left_value = res_opt_catch!(self.left.next_eval(eval));
-		let right_value = res_opt_catch!(self.right.next_eval(eval));
+		let left_value = res_opt_def_false!(self.left.next_eval(eval));
+		let right_value = res_opt_def_false!(self.right.next_eval(eval));
 
 		Ok(Some(Value::Boolean(left_value != right_value)))
 	}
@@ -156,6 +309,7 @@ impl Expression for Or {
 		}
 	}
 }
+
 
 // Primary Expressions
 
@@ -326,7 +480,6 @@ impl Expression for Path {
 		Ok(Some(Value::Node(found_node)))
 	}
 }
-
 
 
 #[derive(Debug)]

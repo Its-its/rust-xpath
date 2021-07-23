@@ -106,21 +106,19 @@ impl NodeSearch {
 			// Find Nodes in state.
 			let (node, states) = state.find_next_node(eval, node_test);
 
-			// Store current state size.
-			let prev_state_size = self.states.len();
-
-			// Place any new states into the List.
-			if let Some(mut states) = states {
-				self.states.append(&mut states);
-			}
-
 			state.found_count += 1;
 
 			let node_pos = state.found_count;
 
+
 			if node.is_some() {
 				// Place state back into array. It could have more Nodes in it.
-				self.states.insert(prev_state_size, state);
+				self.states.push(state);
+			}
+
+			// Place any new states into the List.
+			if let Some(mut states) = states {
+				self.states.append(&mut states);
 			}
 
 			if let Some(node) = node {

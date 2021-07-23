@@ -116,6 +116,29 @@ impl PartialEq for Value {
 }
 
 
+impl From<bool> for Value {
+	fn from(val: bool) -> Self {
+		Value::Boolean(val)
+	}
+}
+
+impl From<f64> for Value {
+	fn from(val: f64) -> Self {
+		Value::Number(val)
+	}
+}
+
+impl From<String> for Value {
+	fn from(val: String) -> Self {
+		Value::String(val)
+	}
+}
+
+impl From<Node> for Value {
+	fn from(val: Node) -> Self {
+		Value::Node(val)
+	}
+}
 
 
 
