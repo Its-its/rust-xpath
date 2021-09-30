@@ -262,7 +262,7 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 
 		// Self '<' AdditiveExpr
 		if step.consume_if_next_token_is(Operator::LessThan)? {
-			let right_expr = self.parse_additive_expression(step)?;
+			let right_expr = self.parse_relational_expression(step)?;
 
 			return Ok(Some(Box::new(LessThan::new(
 				left_expr.unwrap(),
