@@ -157,10 +157,6 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 		self.tokenize();
 
 		if self.error.is_none() {
-			// println!("Steps");
-			// self.token_steps.iter().for_each(|t| println!("\t{:?}", t));
-			// println!();
-
 			let mut stepper = Stepper::new(self.token_steps.clone().into_iter().peekable());
 
 			if stepper.has_more_tokens() {
@@ -168,7 +164,6 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 
 				match expr {
 					Some(expr) => {
-						println!("Parsed: {:#?}", expr);
 						return Ok(ProduceIter::<'eval> { expr, eval: self.eval });
 					}
 
@@ -177,10 +172,6 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 						return Err(Error::InvalidXpath);
 					}
 				}
-			}
-
-			if !stepper.has_more_tokens() {
-				println!("Finished.");
 			}
 		}
 
