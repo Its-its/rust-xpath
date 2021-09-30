@@ -58,6 +58,55 @@ mod tests {
 	pub use crate::factory::{Factory, Document};
 	pub use crate::parse_document;
 
+	fn evaluate(doc: &Document, search: &str) -> Option<Value> {
+		doc.evaluate(search).unwrap().next()
+	}
+
+	fn assert_eq_eval<I: Into<Value>>(doc: &Document, search: &str, value: I) {
+		println!("==========================================================");
+		assert_eq!(
+			evaluate(&doc, search),
+			Some(value.into()),
+			"Eval {:?}", search
+		);
+	}
+
+	#[test]
+	fn expressions() {
+		let doc = parse_document(&mut File::open("./doc/example.html").expect("File::open")).unwrap();
+
+		// Simple
+		assert_eq_eval(&doc, r#"1 + 1"#, 2.0);
+		assert_eq_eval(&doc, r#"0 - 2"#, -2.0);
+
+		assert_eq_eval(&doc, r#"-2"#, -2.0);
+
+		assert_eq_eval(&doc, r#"1 != 1"#, false);
+		assert_eq_eval(&doc, r#"1 != 2"#, true);
+
+		assert_eq_eval(&doc, r#"1 = 1"#, true);
+		assert_eq_eval(&doc, r#"1 = 2"#, false);
+
+		assert_eq_eval(&doc, r#"2 > 1"#, true);
+		assert_eq_eval(&doc, r#"1 > 2"#, false);
+		// assert_eq_eval(&doc, r#"3 > 2 > 1"#, false);
+		// assert_eq_eval(&doc, r#"1 > 2 > 3"#, false);
+
+		assert_eq_eval(&doc, r#"2 < 1"#, false);
+		assert_eq_eval(&doc, r#"1 < 2"#, true);
+
+		assert_eq_eval(&doc, r#"2 >= 1"#, true);
+		assert_eq_eval(&doc, r#"1 >= 1"#, true);
+
+		assert_eq_eval(&doc, r#"2 <= 1"#, false);
+		assert_eq_eval(&doc, r#"1 <= 1"#, true);
+
+
+		// NaN (using true/false since NaNs' aren't equal)
+		assert_eq!(evaluate(&doc, r#"1 + A"#).and_then(|v| v.as_number().ok()).map(|v| v.is_nan()), Some(true));
+		assert_eq!(evaluate(&doc, r#"A + 1"#).and_then(|v| v.as_number().ok()).map(|v| v.is_nan()), Some(true));
+	}
+
 	#[test]
 	fn paths() {
 		let doc = parse_document(&mut File::open("./doc/example.html").expect("File::open")).unwrap();
