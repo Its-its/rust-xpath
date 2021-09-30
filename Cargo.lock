@@ -449,7 +449,7 @@ dependencies = [
 
 [[package]]
 name = "xpather"
-version = "0.3.0-beta.2"
+version = "0.3.0-beta.3"
 dependencies = [
  "html5ever",
  "markup5ever",
