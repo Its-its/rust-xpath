@@ -58,15 +58,17 @@ mod tests {
 	pub use crate::factory::{Factory, Document};
 	pub use crate::parse_document;
 
-	fn evaluate(doc: &Document, search: &str) -> Option<Value> {
-		doc.evaluate(search).unwrap().next()
+	fn evaluate(doc: &Document, search: &str) -> Option<Result<Value>> {
+		doc.evaluate(search)
+			.and_then(|mut v| v.next().transpose())
+			.transpose()
 	}
 
 	fn assert_eq_eval<I: Into<Value>>(doc: &Document, search: &str, value: I) {
 		println!("==========================================================");
 		assert_eq!(
-			evaluate(&doc, search),
-			Some(value.into()),
+			evaluate(doc, search),
+			Some(Ok(value.into())),
 			"Eval {:?}", search
 		);
 	}
@@ -103,8 +105,8 @@ mod tests {
 
 
 		// NaN (using true/false since NaNs' aren't equal)
-		assert_eq!(evaluate(&doc, r#"1 + A"#).and_then(|v| v.as_number().ok()).map(|v| v.is_nan()), Some(true));
-		assert_eq!(evaluate(&doc, r#"A + 1"#).and_then(|v| v.as_number().ok()).map(|v| v.is_nan()), Some(true));
+		assert_eq!(evaluate(&doc, r#"1 + A"#).and_then(|v| v.ok()).and_then(|v| v.as_number().ok()).map(|v| v.is_nan()), Some(true));
+		assert_eq!(evaluate(&doc, r#"A + 1"#).and_then(|v| v.ok()).and_then(|v| v.as_number().ok()).map(|v| v.is_nan()), Some(true));
 	}
 
 	#[test]

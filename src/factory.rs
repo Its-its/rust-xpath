@@ -21,7 +21,7 @@ impl<'a> ProduceIter<'a> {
 		self.try_fold::<_, _, Result<Nodeset>>(
 			Nodeset::new(),
 			|mut set, v| {
-				set.push(v.into_node()?);
+				set.push(v?.into_node()?);
 				Ok(set)
 			}
 		)
@@ -29,10 +29,10 @@ impl<'a> ProduceIter<'a> {
 }
 
 impl<'a> Iterator for ProduceIter<'a> {
-	type Item = Value;
+	type Item = Result<Value>;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		self.expr.next_eval(&self.eval).ok().flatten()
+		self.expr.next_eval(&self.eval).transpose()
 	}
 }
 
