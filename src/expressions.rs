@@ -53,6 +53,11 @@ pub trait Expression: fmt::Debug {
 
 		Ok(nodes)
 	}
+
+	// TODO: Better way
+	fn once_wrapped(&self) -> bool {
+		true
+	}
 }
 
 
@@ -74,6 +79,30 @@ macro_rules! res_opt_def_false {
 			None => return Ok(Some(Value::Boolean(false)))
 		}
 	};
+}
+
+
+/// Insurance to make sure Addition, Subtration, etc. only run once if they're the first evaluation.
+///
+/// It'll run forever otherwise.
+#[derive(Debug)]
+pub struct Once(bool, ExpressionArg);
+
+impl Once {
+	pub fn new(value: ExpressionArg) -> Self {
+		Self(false, value)
+	}
+}
+
+impl Expression for Once {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
+		if self.0 {
+			Ok(None)
+		} else {
+			self.0 = true;
+			self.1.next_eval(eval)
+		}
+	}
 }
 
 
@@ -434,17 +463,21 @@ impl Path {
 	}
 
 	pub fn find_next_node(&mut self, eval: &Evaluation) -> Result<Option<Node>> {
-		if self.steps_initiated && self.search_steps.is_empty() {
-			return Ok(None);
-		}
+		if let Some(node) = self.find_next_node_with_steps(eval)? {
+			Ok(Some(node))
+		} else {
+			let mut found = res_opt_catch!(self.start_pos.next_eval(eval)).into_node()?;
 
-		let result = res_opt_catch!(self.start_pos.next_eval(eval));
+			// Here to ensure we don't loop back around. Need a better way. Also, do we need a root check?
+			if found.is_root() {
+				if self.steps_initiated {
+					return Ok(None);
+				}
 
-		let node = if self.search_steps.is_empty() {
-			self.steps_initiated = true;
+				self.steps_initiated = true;
+			}
 
-			let mut found = result.into_node()?;
-
+			// Creates self.search_steps from self.steps.
 			for step in &mut self.steps {
 				let mut state = NodeSearch::new_with_state(step.axis, found, eval, &*step.node_test);
 
@@ -458,22 +491,18 @@ impl Path {
 				self.search_steps.push(state);
 			}
 
-			found
-		} else {
-			res_opt_catch!(self.find_next_node_with_steps(eval))
-		};
-
-		Ok(Some(node))
+			Ok(Some(found))
+		}
 	}
 }
 
 impl Expression for Path {
 	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
-		let found_node = res_opt_catch!(self.find_next_node(eval));
+		Ok(Some(Value::Node(res_opt_catch!(self.find_next_node(eval)))))
+	}
 
-		//
-
-		Ok(Some(Value::Node(found_node)))
+	fn once_wrapped(&self) -> bool {
+		false
 	}
 }
 

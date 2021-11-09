@@ -207,15 +207,21 @@ impl NodeSearchState {
 
 			AxisName::Attribute => {
 				if let Node::Element(node) = &self.node {
-					if let Some(mut attrs) = value::Attribute::from_node(node) {
-						while self.offset < attrs.len() {
-							let node_attr = Node::Attribute(attrs.remove(self.offset));
+					// Get or Create a cache of Nodes.
+					let nodes = if let Some(cache) = self.cached_nodes.as_mut() {
+						cache
+					} else if let Some(attrs) = value::Attribute::from_node(node) {
+						// Cache Nodes and reverse the array so we can .pop() from start to end.
+						self.cached_nodes = Some(attrs.into_iter().rev().map(Node::Attribute).collect());
 
-							self.offset += 1;
+						self.cached_nodes.as_mut().unwrap()
+					} else {
+						return (None, None);
+					};
 
-							if node_test.test(&eval.new_evaluation_from(&node_attr)).is_some() {
-								return (Some(node_attr), None);
-							}
+					while let Some(node_attr) = nodes.pop() {
+						if node_test.test(&eval.new_evaluation_from(&node_attr)).is_some() {
+							return (Some(node_attr), None);
 						}
 					}
 				}

@@ -3,7 +3,7 @@ use std::iter::Peekable;
 use std::ops::{Deref, DerefMut};
 
 use crate::{AxisName, Error, Evaluation, ExprToken, Node, NodeTest, NodeType, Nodeset, Operator, PrincipalNodeType, Result, Tokenizer, Value};
-use crate::expressions::{Addition, And, ContextNode, Equal, ExpressionArg, Function, GreaterThan, GreaterThanEqual, LessThan, LessThanEqual, Literal, NotEqual, Or, Path, RootNode, Step, Subtraction, Union};
+use crate::expressions::{Addition, And, ContextNode, Equal, ExpressionArg, Function, GreaterThan, GreaterThanEqual, LessThan, LessThanEqual, Literal, NotEqual, Once, Or, Path, RootNode, Step, Subtraction, Union};
 use crate::nodetest;
 use crate::functions;
 
@@ -164,6 +164,12 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 
 				match expr {
 					Some(expr) => {
+						let expr = if expr.once_wrapped() {
+							Box::new(Once::new(expr))
+						} else {
+							expr
+						};
+
 						return Ok(ProduceIter::<'eval> { expr, eval: self.eval });
 					}
 
