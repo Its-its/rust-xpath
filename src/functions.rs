@@ -214,10 +214,10 @@ impl Function for Contains {
 		let right = args.get_required(1)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
 		let left_node = left.into_node()?;
-		let right_node = right.into_node()?;
-
 		let left_value = left_node.get_string_value()?;
-		let right_value = right_node.get_string_value()?;
+
+		// Value from XPATH Query
+		let right_value = right.into_string()?;
 
 		Ok(Value::Boolean(
 			match (left_value, right_value) {
