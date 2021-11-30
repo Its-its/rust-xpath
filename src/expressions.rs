@@ -86,22 +86,19 @@ macro_rules! res_opt_def_false {
 ///
 /// It'll run forever otherwise.
 #[derive(Debug)]
-pub struct Once(bool, ExpressionArg);
+pub struct Once(Option<ExpressionArg>);
 
 impl Once {
 	pub fn new(value: ExpressionArg) -> Self {
-		Self(false, value)
+		Self(Some(value))
 	}
 }
 
 impl Expression for Once {
 	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
-		if self.0 {
-			Ok(None)
-		} else {
-			self.0 = true;
-			self.1.next_eval(eval)
-		}
+		self.0.take()
+			.and_then(|mut v| v.next_eval(eval).transpose())
+			.transpose()
 	}
 }
 
