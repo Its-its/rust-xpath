@@ -91,7 +91,7 @@ impl NodeTest for Attribute {
 		if context.node.is_attribute() {
 			if let Some(attr) = context.node.attribute() {
 				if self.name_test.is_match(context, &attr.attr.name) {
-					return Some(&context.node);
+					return Some(context.node);
 				}
 			}
 		}
@@ -144,7 +144,7 @@ impl NodeTest for Namespace {
 				LocalName::from(context.node.prefix()))
 			)
 		{
-			Some(&context.node)
+			Some(context.node)
 		} else {
 			None
 		}
@@ -166,7 +166,7 @@ impl NodeTest for Element {
 	fn test<'a>(&self, context: &Evaluation<'a>) -> Option<&'a DomNode> {
 		if let Some(name) = context.node.name() {
 			if context.node.is_element() && self.name_test.is_match(context, &name) {
-				return Some(&context.node);
+				return Some(context.node);
 			}
 		}
 
@@ -180,7 +180,7 @@ pub struct Node;
 
 impl NodeTest for Node {
 	fn test<'a>(&self, context: &Evaluation<'a>) -> Option<&'a DomNode> {
-		Some(&context.node)
+		Some(context.node)
 	}
 }
 
@@ -191,7 +191,7 @@ pub struct Text;
 impl NodeTest for Text {
 	fn test<'a>(&self, context: &Evaluation<'a>) -> Option<&'a DomNode> {
 		if let DomNode::Text(_) = context.node {
-			Some(&context.node)
+			Some(context.node)
 		} else {
 			None
 		}
@@ -205,7 +205,7 @@ pub struct Comment;
 impl NodeTest for Comment {
 	fn test<'a>(&self, context: &Evaluation<'a>) -> Option<&'a DomNode> {
 		if let DomNode::Comment(_) = context.node {
-			Some(&context.node)
+			Some(context.node)
 		} else {
 			None
 		}
@@ -227,8 +227,8 @@ impl NodeTest for ProcessingInstruction {
 	fn test<'a>(&self, context: &Evaluation<'a>) -> Option<&'a DomNode> {
 		if context.node.is_processing_instruction() {
 			match (self.target.as_deref(), context.node.target()) {
-				(Some(name), Some(ref context_target)) if name == context_target => Some(&context.node),
-				(None, _) => Some(&context.node),
+				(Some(name), Some(ref context_target)) if name == context_target => Some(context.node),
+				(None, _) => Some(context.node),
 				_ => None
 			}
 		} else {

@@ -178,7 +178,7 @@ impl Attribute {
 		let mut comp = String::new();
 
 		if let Some(prefix) = &self.attr.name.prefix {
-			comp.push_str(&prefix);
+			comp.push_str(prefix);
 			comp.push(':');
 		}
 
@@ -540,7 +540,7 @@ fn find_nodes_from_parent<F: Fn(usize, usize) -> bool>(node: &Node, f_capture: F
 		let i = match children
 			.iter()
 			.enumerate()
-			.find(|&(_, child)| Rc::ptr_eq(&child, &node))
+			.find(|&(_, child)| Rc::ptr_eq(child, &node))
 		{
 			Some((i, _)) => i,
 			None => return Vec::new()
