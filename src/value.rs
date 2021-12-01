@@ -500,7 +500,7 @@ impl PartialEq for Node {
 		}
 
 		match (self.inner_weak(), other.inner_weak()) {
-			(Some(left), Some(right)) => compare_weak_nodes(left, right),
+			(Some(left), Some(right)) => left.ptr_eq(right),
 			_ => false
 		}
 	}

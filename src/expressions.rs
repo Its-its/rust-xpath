@@ -433,24 +433,22 @@ impl Path {
 	}
 
 	pub fn find_next_node_with_steps(&mut self, eval: &Evaluation) -> Result<Option<Node>> {
-		if !self.search_steps.is_empty() {
-			while let Some(mut search_state) = self.search_steps.pop() {
-				let step = &mut self.steps[self.search_steps.len()];
+		while let Some(mut search_state) = self.search_steps.pop() {
+			let step = &mut self.steps[self.search_steps.len()];
 
-				let found_node_eval = step.evaluate(eval, &mut search_state)?;
+			let found_node_eval = step.evaluate(eval, &mut search_state)?;
 
-				if let Some(passed_pred_eval) = found_node_eval {
-					self.search_steps.push(search_state);
+			if let Some(passed_pred_eval) = found_node_eval {
+				self.search_steps.push(search_state);
 
-					if let Some(node) = passed_pred_eval {
-						if self.steps.len() == self.search_steps.len() {
-							return Ok(Some(node));
-						} else {
-							// Add to step state
-							let step = &self.steps[self.search_steps.len()];
+				if let Some(node) = passed_pred_eval {
+					if self.steps.len() == self.search_steps.len() {
+						return Ok(Some(node));
+					} else {
+						// Add to step state
+						let step = &self.steps[self.search_steps.len()];
 
-							self.search_steps.push(NodeSearch::new_with_state(step.axis, node, eval, &*step.node_test));
-						}
+						self.search_steps.push(NodeSearch::new_with_state(step.axis, node, eval, &*step.node_test));
 					}
 				}
 			}
@@ -466,7 +464,7 @@ impl Path {
 			let mut found = res_opt_catch!(self.start_pos.next_eval(eval)).into_node()?;
 
 			// Here to ensure we don't loop back around. Need a better way. Also, do we need a root check?
-			if found.is_root() {
+			if &found == eval.starting_eval_node {
 				if self.steps_initiated {
 					return Ok(None);
 				}

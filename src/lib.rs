@@ -47,7 +47,7 @@ pub fn parse_document<R: Read>(data: &mut R) -> Result<Document> {
 
 #[cfg(test)]
 mod tests {
-	use std::fs::File;
+	use std::io::Cursor;
 
 	pub use crate::nodetest::{NodeTest, NameTest};
 	pub use crate::result::{Result, Error};
@@ -57,6 +57,22 @@ mod tests {
 	pub use crate::parser::Tokenizer;
 	pub use crate::factory::{Factory, Document};
 	pub use crate::parse_document;
+
+
+	const WEBPAGE: &str = r#"
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8">
+			<meta http-equiv="X-UA-Compatible" content="IE=edge">
+			<meta name="viewport" content="width=device-width, initial-scale=1.0">
+			<title>Document</title>
+		</head>
+		<body>
+			<div class="test1">Testing 1</div>
+			<span class="test2">Testing 2</span>
+		</body>
+	</html>"#;
 
 	fn evaluate(doc: &Document, search: &str) -> Option<Result<Value>> {
 		doc.evaluate(search)
@@ -75,7 +91,7 @@ mod tests {
 
 	#[test]
 	fn expressions() {
-		let doc = parse_document(&mut File::open("./doc/example.html").expect("File::open")).unwrap();
+		let doc = parse_document(&mut Cursor::new(WEBPAGE)).unwrap();
 
 		// Simple
 		assert_eq_eval(&doc, r#"1 + 1"#, 2.0);
@@ -105,13 +121,13 @@ mod tests {
 
 
 		// NaN (using true/false since NaNs' aren't equal)
-		assert_eq!(evaluate(&doc, r#"1 + A"#).and_then(|v| v.ok()).and_then(|v| v.as_number().ok()).map(|v| v.is_nan()), Some(true));
-		assert_eq!(evaluate(&doc, r#"A + 1"#).and_then(|v| v.ok()).and_then(|v| v.as_number().ok()).map(|v| v.is_nan()), Some(true));
+		assert_eq!(evaluate(&doc, r#"1 + A"#).and_then(|v| v.ok()?.as_number().ok()).map(|v| v.is_nan()), Some(true));
+		assert_eq!(evaluate(&doc, r#"A + 1"#).and_then(|v| v.ok()?.as_number().ok()).map(|v| v.is_nan()), Some(true));
 	}
 
 	#[test]
 	fn paths() {
-		let doc = parse_document(&mut File::open("./doc/example.html").expect("File::open")).unwrap();
+		let doc = parse_document(&mut Cursor::new(WEBPAGE)).unwrap();
 
 		let factory = Factory::new("//head/title", &doc, &doc.root);
 		println!("{:?}", factory.produce().expect("prod").collect_nodes());
@@ -152,6 +168,8 @@ mod tests {
 
 	#[test]
 	fn paths_abbreviated() {
+		let doc = parse_document(&mut Cursor::new(WEBPAGE)).unwrap();
+
 		// println!("Location Paths (Abbreviated Syntax)");
 		// para selects the para element children of the context node
 		// * selects all element children of the context node
@@ -179,6 +197,10 @@ mod tests {
 
 	#[test]
 	fn general_examples() {
+		let doc = parse_document(&mut Cursor::new(WEBPAGE)).unwrap();
+
+		assert_eq_eval(&doc, r#"//div[contains(text(), "Testing 1")]/@class"#, Value::String("test1".into()));
+
 		// println!("Examples");
 		// dbg!(doc.evaluate("//*[@id='rcTEST']//*[contains(text(), 'TEST Interactive')]/../button[2]"));
 		// dbg!(doc.evaluate("//*[@id='rcTEST']//*[contains(text(), 'TEST Interactive')]/..//*[contains(text(), 'Setting')]"));

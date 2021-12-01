@@ -10,6 +10,8 @@ pub struct Evaluation<'a> {
 	pub document: &'a Document,
 	pub node: &'a Node,
 
+	pub starting_eval_node: &'a Node,
+
 	pub node_position: usize,
 
 	pub is_last_node: bool
@@ -22,6 +24,7 @@ impl<'a> Evaluation<'a> {
 		Evaluation {
 			document,
 			node,
+			starting_eval_node: node,
 			node_position: 1,
 			is_last_node: false
 		}
@@ -35,6 +38,7 @@ impl<'a> Evaluation<'a> {
 		Self {
 			document: self.document,
 			node,
+			starting_eval_node: self.starting_eval_node,
 			node_position: 1,
 			is_last_node: false
 		}
@@ -44,6 +48,7 @@ impl<'a> Evaluation<'a> {
 		Self {
 			document: self.document,
 			node,
+			starting_eval_node: self.starting_eval_node,
 			node_position: position,
 			is_last_node: false
 		}
