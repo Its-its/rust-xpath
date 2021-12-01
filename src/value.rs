@@ -77,6 +77,16 @@ impl Value {
 			_ => Err(ValueError::String.into())
 		}
 	}
+
+	/// Change non-string `Value` to a `String`
+	pub fn convert_to_string(self) -> Result<String> {
+		Ok(match self {
+			Value::Boolean(_) => String::new(),
+			Value::Number(v) => v.to_string(),
+			Value::String(v) => v,
+			Value::Node(v) => v.get_string_value()?,
+		})
+	}
 }
 
 impl PartialEq for Value {

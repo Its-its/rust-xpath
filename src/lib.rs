@@ -71,6 +71,11 @@ mod tests {
 		<body>
 			<div class="test1">Testing 1</div>
 			<span class="test2">Testing 2</span>
+			<span class="test3">Testing 3</span>
+			<div class="group1" aria-label="Watch Out!">
+				<h1>The Group is here!</h1>
+				<br/>
+			</div>
 		</body>
 	</html>"#;
 
@@ -81,7 +86,6 @@ mod tests {
 	}
 
 	fn assert_eq_eval<I: Into<Value>>(doc: &Document, search: &str, value: I) {
-		println!("==========================================================");
 		assert_eq!(
 			evaluate(doc, search),
 			Some(Ok(value.into())),
@@ -198,6 +202,28 @@ mod tests {
 	#[test]
 	fn general_examples() {
 		let doc = parse_document(&mut Cursor::new(WEBPAGE)).unwrap();
+
+		// Simple
+
+		assert_eq_eval(&doc, r#"contains("abc123", "bc12")"#, true);
+		assert_eq_eval(&doc, r#"contains("abc123", "4")"#, false);
+
+		assert_eq_eval(&doc, r#"concat(true, "123")"#, Value::String("123".into()));
+		assert_eq_eval(&doc, r#"concat(false, "123")"#, Value::String("123".into()));
+		assert_eq_eval(&doc, r#"concat(1, "123")"#, Value::String("1123".into()));
+		assert_eq_eval(&doc, r#"concat("abc", "123")"#, Value::String("abc123".into()));
+
+		// TODO: Below doesn't work.
+
+		// assert_eq_eval(&doc, r#"starts-with("abc123", "abc")"#, true);
+		// assert_eq_eval(&doc, r#"starts-with("123", 1)"#, true);
+
+		// assert_eq_eval(&doc, r#"substring-before("abc123", "1")"#, Value::String("abc".into()));
+
+		// assert_eq_eval(&doc, r#"substring-after("abc123", "c")"#, Value::String("123".into()));
+
+
+		// Document Lookups
 
 		assert_eq_eval(&doc, r#"//div[contains(text(), "Testing 1")]/@class"#, Value::String("test1".into()));
 

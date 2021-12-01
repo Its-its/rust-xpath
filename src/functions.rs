@@ -172,13 +172,12 @@ impl Function for Concat {
 		let mut concat_value = String::new();
 
 		for expr in args.as_array() {
-			let value_eval = expr.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+			// It's okay if we don't find the value. We will not insert anything.
+			if let Some(value_eval) = expr.next_eval(eval)? {
+				let string_value = value_eval.convert_to_string()?;
 
-			let node = value_eval.into_node()?;
-
-			let string_value = node.get_string_value()?;
-
-			concat_value.push_str(&string_value);
+				concat_value.push_str(&string_value);
+			}
 		}
 
 		Ok(Value::String(concat_value))
@@ -194,11 +193,8 @@ impl Function for StartsWith {
 		let left = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 		let right = args.get_required(1)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
-		let left_node = left.into_node()?;
-		let right_node = right.into_node()?;
-
-		let left_value = left_node.get_string_value()?;
-		let right_value = right_node.get_string_value()?;
+		let left_value = left.convert_to_string()?;
+		let right_value = right.convert_to_string()?;
 
 		Ok(Value::Boolean(left_value.starts_with(&right_value)))
 	}
@@ -213,11 +209,8 @@ impl Function for Contains {
 		let left = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 		let right = args.get_required(1)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
-		let left_node = left.into_node()?;
-		let left_value = left_node.get_string_value()?;
-
-		// Value from XPATH Query
-		let right_value = right.into_string()?;
+		let left_value = left.convert_to_string()?;
+		let right_value = right.convert_to_string()?;
 
 		Ok(Value::Boolean(
 			match (left_value, right_value) {
@@ -240,12 +233,8 @@ impl Function for SubstringBefore {
 		let left = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 		let right = args.get_required(1)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
-		let left_node = left.into_node()?;
-		let right_node = right.into_node()?;
-
-		let left_value = left_node.get_string_value()?;
-		let right_value = right_node.get_string_value()?;
-
+		let left_value = left.convert_to_string()?;
+		let right_value = right.convert_to_string()?;
 
 		if right_value.is_empty() {
 			Ok(Value::String(String::new()))
@@ -266,12 +255,8 @@ impl Function for SubstringAfter {
 		let left = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 		let right = args.get_required(1)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
-		let left_node = left.into_node()?;
-		let right_node = right.into_node()?;
-
-		let left_value = left_node.get_string_value()?;
-		let right_value = right_node.get_string_value()?;
-
+		let left_value = left.convert_to_string()?;
+		let right_value = right.convert_to_string()?;
 
 		if right_value.is_empty() {
 			Ok(Value::String(String::new()))
@@ -292,10 +277,7 @@ impl Function for Substring {
 		let value_0 = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 		let value_1 = args.get_required(1)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
-		let node = value_0.into_node()?;
-
-		let value_str = node.get_string_value()?;
-
+		let value_str = value_0.convert_to_string()?;
 
 		let start = value_1.as_number()?.round().abs() as isize - 1;
 
@@ -307,10 +289,7 @@ impl Function for Substring {
 
 		let end = start + end;
 
-		let start = if start < 0 { 0 } else { start };
-		let end = if end < 0 { 0 } else { end };
-
-		Ok(Value::String(value_str.get(start as usize .. end as usize).map(|v| v.to_string()).unwrap_or_default()))
+		Ok(Value::String(value_str.get(start.min(0) as usize .. end.min(0) as usize).map(|v| v.to_string()).unwrap_or_default()))
 	}
 }
 
@@ -323,9 +302,7 @@ impl Function for StringLength {
 		if let Some(arg) = args.get_optional(0) {
 			let value = arg.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
-			let node = value.into_node()?;
-
-			let value_str = node.get_string_value()?;
+			let value_str = value.convert_to_string()?;
 
 			Ok(Value::Number(value_str.len() as f64))
 		} else {
@@ -344,9 +321,7 @@ impl Function for NormalizeSpace {
 			Some(expr) => {
 				let value = expr.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
 
-				let node = value.into_node()?;
-
-				let value_str = node.get_string_value()?;
+				let value_str = value.convert_to_string()?;
 
 				Ok(Value::String(
 					value_str.trim()
