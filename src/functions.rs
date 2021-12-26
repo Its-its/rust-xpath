@@ -23,6 +23,10 @@ impl<'a> Args<'a> {
 		self.get_optional(index).ok_or(Error::MissingFuncArgument)
 	}
 
+	pub fn get_required_value(&mut self, index: usize, eval: &Evaluation) -> Result<Value> {
+		self.get_required(index)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)
+	}
+
 	pub fn get_optional(&mut self, index: usize) -> Option<&mut Box<dyn Expression>> {
 		self.0.get_mut(index)
 	}
@@ -152,7 +156,7 @@ pub struct ToString;
 
 impl Function for ToString {
 	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let value = match args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)? {
+		let value = match args.get_required_value(0, eval)? {
 			Value::Boolean(val) => val.to_string(),
 			Value::Number(val) => val.to_string(),
 			Value::String(val) => val,
@@ -190,8 +194,8 @@ pub struct StartsWith;
 
 impl Function for StartsWith {
 	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let left = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
-		let right = args.get_required(1)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+		let left = args.get_required_value(0, eval)?;
+		let right = args.get_required_value(1, eval)?;
 
 		let left_value = left.convert_to_string()?;
 		let right_value = right.convert_to_string()?;
@@ -206,8 +210,8 @@ pub struct Contains;
 
 impl Function for Contains {
 	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let left = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
-		let right = args.get_required(1)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+		let left = args.get_required_value(0, eval)?;
+		let right = args.get_required_value(1, eval)?;
 
 		let left_value = left.convert_to_string()?;
 		let right_value = right.convert_to_string()?;
@@ -230,8 +234,8 @@ pub struct SubstringBefore;
 
 impl Function for SubstringBefore {
 	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let left = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
-		let right = args.get_required(1)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+		let left = args.get_required_value(0, eval)?;
+		let right = args.get_required_value(1, eval)?;
 
 		let left_value = left.convert_to_string()?;
 		let right_value = right.convert_to_string()?;
@@ -252,8 +256,8 @@ pub struct SubstringAfter;
 
 impl Function for SubstringAfter {
 	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let left = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
-		let right = args.get_required(1)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+		let left = args.get_required_value(0, eval)?;
+		let right = args.get_required_value(1, eval)?;
 
 		let left_value = left.convert_to_string()?;
 		let right_value = right.convert_to_string()?;
@@ -274,8 +278,8 @@ pub struct Substring;
 
 impl Function for Substring {
 	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let value_0 = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
-		let value_1 = args.get_required(1)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+		let value_0 = args.get_required_value(0, eval)?;
+		let value_1 = args.get_required_value(1, eval)?;
 
 		let value_str = value_0.convert_to_string()?;
 
@@ -360,7 +364,7 @@ pub struct Not;
 
 impl Function for Not {
 	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let found = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+		let found = args.get_required_value(0, eval)?;
 		Ok(Value::Boolean(!found.as_boolean()?))
 	}
 }
@@ -425,7 +429,7 @@ pub struct Floor;
 
 impl Function for Floor {
 	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let val = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+		let val = args.get_required_value(0, eval)?;
 
 		let val = val.as_number()?;
 
@@ -439,7 +443,7 @@ pub struct Ceiling;
 
 impl Function for Ceiling {
 	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let val = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+		let val = args.get_required_value(0, eval)?;
 
 		let val = val.as_number()?;
 
@@ -453,7 +457,7 @@ pub struct Round;
 
 impl Function for Round {
 	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let val = args.get_required(0)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+		let val = args.get_required_value(0, eval)?;
 
 		let val = val.as_number()?;
 
