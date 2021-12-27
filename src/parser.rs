@@ -272,7 +272,7 @@ impl Tokenizer {
 		// Argument		::= Expr
 
 		// xml.txt: NameStartChar
-		let reg = Regex::new(r#"^[a-zA-Z0-9:_]+"#).unwrap();
+		let reg = Regex::new(r#"^[a-zA-Z0-9:_-]+"#).unwrap();
 
 		if let Some(found) = reg.find(rem_path) {
 			if Tokenizer::find_function_parenth(&rem_path[found.end()..]).is_some() {
