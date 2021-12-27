@@ -34,7 +34,11 @@ pub enum Error {
 	#[error("Invalid Xpath")]
 	InvalidXpath,
 	#[error("Missing Function Argument")]
-	MissingFuncArgument
+	MissingFuncArgument,
+	#[error("Unable To Find Value")]
+	UnableToFindValue,
+	#[error("Error Occured in Function {0:?}: {1:?}")]
+	FunctionError(String, Box<Error>)
 }
 
 

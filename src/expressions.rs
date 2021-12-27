@@ -463,7 +463,7 @@ impl Path {
 		} else {
 			let mut found = res_opt_catch!(self.start_pos.next_eval(eval)).into_node()?;
 
-			// Here to ensure we don't loop back around. Need a better way. Also, do we need a root check?
+			// Here to ensure we don't loop back around.
 			if &found == eval.starting_eval_node {
 				if self.steps_initiated {
 					return Ok(None);
@@ -506,8 +506,7 @@ impl Expression for Path {
 pub struct Step {
 	axis: AxisName,
 	node_test: Box<dyn NodeTest>, // A Step Test
-	predicates: Vec<Predicate>,
-	search_cache: Option<NodeSearchState>
+	predicates: Vec<Predicate>
 }
 
 impl Step {
@@ -524,8 +523,7 @@ impl Step {
 		Step {
 			axis,
 			node_test,
-			predicates: preds,
-			search_cache: None
+			predicates: preds
 		}
 	}
 

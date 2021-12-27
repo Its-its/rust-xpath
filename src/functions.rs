@@ -24,7 +24,11 @@ impl<'a> Args<'a> {
 	}
 
 	pub fn get_required_value(&mut self, index: usize, eval: &Evaluation) -> Result<Value> {
-		self.get_required(index)?.next_eval(eval)?.ok_or(Error::MissingFuncArgument)
+		self.get_required(index)?.next_eval(eval)?.ok_or(Error::UnableToFindValue)
+	}
+
+	pub fn get_required_optional_value(&mut self, index: usize, eval: &Evaluation) -> Result<Option<Value>> {
+		self.get_required(index)?.next_eval(eval)
 	}
 
 	pub fn get_optional(&mut self, index: usize) -> Option<&mut Box<dyn Expression>> {
@@ -86,7 +90,7 @@ pub struct LocalName;
 impl Function for LocalName {
 	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		if let Some(expr) = args.get_optional(0) {
-			let value = expr.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+			let value = expr.next_eval(eval)?.ok_or(Error::UnableToFindValue)?;
 			let node = value.into_node()?;
 
 			let qual = node.name().ok_or_else::<Error, _>(|| ValueError::Nodeset.into())?;
@@ -106,7 +110,7 @@ pub struct NamespaceUri;
 impl Function for NamespaceUri {
 	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		if let Some(expr) = args.get_optional(0) {
-			let value = expr.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+			let value = expr.next_eval(eval)?.ok_or(Error::UnableToFindValue)?;
 			let node = value.into_node()?;
 
 			let qual = node.name().ok_or_else::<Error, _>(|| ValueError::Nodeset.into())?;
@@ -125,7 +129,7 @@ pub struct Name;
 impl Function for Name {
 	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		if let Some(expr) = args.get_optional(0) {
-			let value = expr.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+			let value = expr.next_eval(eval)?.ok_or(Error::UnableToFindValue)?;
 			let node = value.into_node()?;
 
 			let qual = node.name().ok_or_else::<Error, _>(|| ValueError::Nodeset.into())?;
@@ -194,8 +198,13 @@ pub struct StartsWith;
 
 impl Function for StartsWith {
 	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let left = args.get_required_value(0, eval)?;
-		let right = args.get_required_value(1, eval)?;
+		// Required since if the required value does not contain wanted result it will error with UnableToFindValue. We don't want an error. We want a Boolean(false).
+		let (left, right) = match (args.get_required_optional_value(0, eval)?, args.get_required_optional_value(1, eval)?) {
+			(Some(a), Some(b)) => (a, b),
+			(None, None) |
+			(None, Some(_)) |
+			(Some(_), None) => return Ok(Value::Boolean(false))
+		};
 
 		let left_value = left.convert_to_string()?;
 		let right_value = right.convert_to_string()?;
@@ -210,8 +219,13 @@ pub struct Contains;
 
 impl Function for Contains {
 	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
-		let left = args.get_required_value(0, eval)?;
-		let right = args.get_required_value(1, eval)?;
+		// Required since if the required value does not contain wanted result it will error with UnableToFindValue. We don't want an error. We want a Boolean(false).
+		let (left, right) = match (args.get_required_optional_value(0, eval)?, args.get_required_optional_value(1, eval)?) {
+			(Some(a), Some(b)) => (a, b),
+			(None, None) |
+			(None, Some(_)) |
+			(Some(_), None) => return Ok(Value::Boolean(false))
+		};
 
 		let left_value = left.convert_to_string()?;
 		let right_value = right.convert_to_string()?;
@@ -304,7 +318,7 @@ pub struct StringLength;
 impl Function for StringLength {
 	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		if let Some(arg) = args.get_optional(0) {
-			let value = arg.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+			let value = arg.next_eval(eval)?.ok_or(Error::UnableToFindValue)?;
 
 			let value_str = value.convert_to_string()?;
 
@@ -323,7 +337,7 @@ impl Function for NormalizeSpace {
 	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		match args.get_optional(0) {
 			Some(expr) => {
-				let value = expr.next_eval(eval)?.ok_or(Error::MissingFuncArgument)?;
+				let value = expr.next_eval(eval)?.ok_or(Error::UnableToFindValue)?;
 
 				let value_str = value.convert_to_string()?;
 
