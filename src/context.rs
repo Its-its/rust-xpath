@@ -385,8 +385,75 @@ impl NodeSearchState {
 			AxisName::SelfAxis => if self.offset == 0 {
 				if let Some(node) = node_test.test(eval) {
 					self.offset = 1;
-					return (Some(node.clone()), None);
-				}
+
+
+
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Hash)]
+pub enum MoreNodes<V> {
+	/// Found something before checks
+	Found(V),
+
+	/// Found something which passes checks
+	PassedPredicate(V),
+	/// Found something which didn't pass checks
+	FailedPredicate,
+
+	Possible,
+
+	/// Nothing Found
+	No
+}
+
+impl<V> MoreNodes<V> {
+	/// If we found a node or if there are potentially more nodes
+	pub fn has_more(&self) -> bool {
+		matches!(self, Self::Found(_) | Self::Possible)
+	}
+
+	/// We found a Node
+	pub fn is_found(&self) -> bool {
+		matches!(self, Self::Found(_))
+	}
+
+	/// It's possible we have more Nodes.
+	pub fn is_possible(&self) -> bool {
+		matches!(self, Self::Possible)
+	}
+
+	/// We have no more Nodes.
+	pub fn is_no(&self) -> bool {
+		matches!(self, Self::No)
+	}
+
+
+	pub fn take(&mut self) -> Self {
+		std::mem::replace(self, Self::No)
+	}
+
+
+	/// Turn into Option.
+	pub fn into_option(self) -> Option<V> {
+		match self {
+			Self::Found(v)|
+			Self::PassedPredicate(v) => Some(v),
+
+			_ => None,
+		}
+	}
+
+	/// Reference to Optional Value.
+	pub fn as_option(&self) -> Option<&V> {
+		match self {
+			Self::Found(v) |
+			Self::PassedPredicate(v) => Some(v),
+
+			_ => None
+		}
+	}
+}
+
+
+
 			}
 		}
 
