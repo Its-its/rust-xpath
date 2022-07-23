@@ -116,13 +116,13 @@ impl NodeSearch {
 			.collect()
 		);
 
-		base_state.found_count += 1;
-
 		match node {
 			MoreNodes::Found(node) => {
 				let next_step_index = base_index + 1;
 
 				if global_steps.len() == next_step_index {
+					base_state.found_count += 1;
+
 					return Ok((
 						// node,
 						global_steps[base_index].borrow_mut().evaluate(
@@ -244,7 +244,9 @@ impl NodeSearch {
 			.collect()
 		);
 
-		curr_state.found_count += 1;
+		if node.is_found() {
+			curr_state.found_count += 1;
+		}
 
 		let curr_node_pos = curr_state.found_count;
 
