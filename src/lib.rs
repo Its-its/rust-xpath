@@ -72,9 +72,18 @@ mod tests {
 			<div class="test1">Testing 1</div>
 			<span class="test2">Testing 2</span>
 			<span class="test3">Testing 3</span>
+			<a>Maybe</a>
 			<div class="group1" aria-label="Watch Out!">
 				<h1>The Group is here!</h1>
 				<br/>
+				<a class="clickable1">Don't click!</a>
+			</div>
+			<a class="clickable2">
+				<img src="" alt="unable to display" />
+			</a>
+			<div class="group2" aria-label="Come in!">
+				<a class="clickable1">Open Here!</a>
+				<img src="" alt="unable to display" />
 			</div>
 		</body>
 	</html>"#;
@@ -85,13 +94,38 @@ mod tests {
 			.transpose()
 	}
 
-	fn assert_eq_eval<I: Into<Value>>(doc: &Document, search: &str, value: I) {
-		assert_eq!(
-			evaluate(doc, search),
-			Some(Ok(value.into())),
-			"Eval {:?}", search
-		);
+	fn assert_is_some(doc: &Document, search: &str) {
+		assert!(evaluate(doc, search).is_some(), "IS SOME {:?}", search);
 	}
+
+	fn assert_is_none(doc: &Document, search: &str) {
+		assert!(evaluate(doc, search).is_none(), "IS NONE {:?}", search);
+	}
+
+	fn assert_is_error(doc: &Document, search: &str) {
+		assert_eq!(evaluate(doc, search).map(|v| v.is_err()), Some(true), "IS ERR {:?}", search);
+	}
+
+	fn assert_is_ok(doc: &Document, search: &str) {
+		assert_eq!(evaluate(doc, search).map(|v| v.is_ok()), Some(true), "IS OK {:?}", search);
+	}
+
+	fn assert_eq_count(doc: &Document, search: &str, value: usize) {
+		assert_eq!(doc.evaluate(search).map(|v| v.count()), Ok(value), "Count {:?}", search);
+	}
+
+	fn assert_eq_eval<I: Into<Value>>(doc: &Document, search: &str, value: I) {
+		assert_eq!(evaluate(doc, search), Some(Ok(value.into())), "Eval EQ OK {:?}", search);
+	}
+
+	fn assert_eq_eval_to_string<I: ToString>(doc: &Document, search: &str, value: I) {
+		assert_eq!(evaluate(doc, search).map(|v| v.and_then(|v| v.convert_to_string())), Some(Ok(value.to_string())), "Eval EQ OK {:?}", search);
+	}
+
+	fn assert_eq_err(doc: &Document, search: &str, value: Error) {
+		assert_eq!(evaluate(doc, search), Some(Err(value)), "Eval EQ ERR {:?}", search);
+	}
+
 
 	#[test]
 	fn expressions() {
@@ -133,8 +167,20 @@ mod tests {
 	fn paths() {
 		let doc = parse_document(&mut Cursor::new(WEBPAGE)).unwrap();
 
-		let factory = Factory::new("//head/title", &doc, &doc.root);
-		println!("{:?}", factory.produce().expect("prod").collect_nodes());
+
+		// == Counting ==
+
+		assert_eq_count(&doc, r#"//div"#, 3);
+		assert_eq_count(&doc, r#"//img"#, 2);
+
+
+		// == Bug corrections ==
+
+		// FIXED BUG: Was causing an error (UnableToFindValue) if element it was comparing against didn't contain class attribute.
+		assert_is_ok(&doc, r#"//div[contains(@class, "group2")]"#);
+		// FIXED BUG: Wasn't prioritizing going into nested elements.
+		assert_eq_eval_to_string(&doc, r#"//a[starts-with(@class, "click")]/@class"#, "clickable1");
+
 
 		println!("Location Paths (Unabbreviated Syntax)");
 		// assert_eq!(doc.evaluate("//head/title"), Ok(Value::Nodeset(vec![].into()))); // selects the document root (which is always the parent of the document element)
@@ -250,5 +296,13 @@ mod tests {
 		// dbg!(doc.evaluate("//div[div[p[contains(text(),'Status')]]]/preceding-sibling::div/div/span[3]/span"));
 		// dbg!(doc.evaluate("//*[@id='COUPLING']//*[contains(text(),'COUPLE Trend')]/../div/select"));
 		// dbg!(doc.evaluate("//*[@id='ffaHeaderDropdown']//a[contains(text(),'Start Workflow')]"));
+	}
+
+
+	#[test]
+	fn general_errors() {
+		let doc = parse_document(&mut Cursor::new(WEBPAGE)).unwrap();
+
+		// assert_eq_err(&doc, r#"contains("abc123")"#, Error::FunctionError("alloc::boxed::Box<dyn xpather::functions::Function>".to_string(), Box::new(Error::MissingFuncArgument)));
 	}
 }

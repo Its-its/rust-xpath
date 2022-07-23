@@ -22,9 +22,9 @@
 // Whitespace can be freely used between tokens.
 // The tokenization process is described in [3.7 Lexical Structure].
 
-use std::fmt;
+use std::{fmt, cell::RefCell};
 
-use crate::{context::{NodeSearch, NodeSearchState}, functions::{self, Args}, value::Value};
+use crate::{context::{NodeSearch, MoreNodes, FoundNode}, functions::{self, Args}, value::Value};
 use crate::{AxisName, Evaluation, Node, NodeTest, Result};
 
 pub type CallFunction = fn(ExpressionArg, ExpressionArg) -> ExpressionArg;
@@ -417,40 +417,52 @@ impl Expression for ContextNode {
 #[derive(Debug)]
 pub struct Path {
 	pub start_pos: ExpressionArg,
-	pub steps: Vec<Step>,
-	pub search_steps: Vec<NodeSearch>,
-	pub steps_initiated: bool
+	pub steps: Vec<RefCell<Step>>,
+	// TODO: Utilize NodeSearch::Group and add a Vec<> inside it to allow for nested calls.
+	// Each nest should be placed into here. Example: these would be in here: ROOT, html, html/head, html/body, html/body/..., etc..
+	pub search_groupings: Vec<NodeSearch>,
+	pub steps_initiated: bool,
 }
 
 impl Path {
 	pub fn new(start_pos: ExpressionArg, steps: Vec<Step>) -> Self {
 		Self {
 			start_pos,
-			steps,
-			search_steps: Vec::new(),
-			steps_initiated: false
+			steps: steps.into_iter().map(RefCell::new).collect(),
+			search_groupings: Vec::new(),
+			steps_initiated: false,
 		}
 	}
 
 	pub fn find_next_node_with_steps(&mut self, eval: &Evaluation) -> Result<Option<Node>> {
-		while let Some(mut search_state) = self.search_steps.pop() {
-			let step = &mut self.steps[self.search_steps.len()];
+		while let Some(mut grouping) = self.search_groupings.pop() {
+			let (found_node, append_states) = grouping.find_and_cache_next_node(eval, &self.steps)?;
 
-			let found_node_eval = step.evaluate(eval, &mut search_state)?;
+			match found_node {
+				MoreNodes::PassedPredicate(node) => {
+					self.search_groupings.push(grouping);
 
-			if let Some(passed_pred_eval) = found_node_eval {
-				self.search_steps.push(search_state);
-
-				if let Some(node) = passed_pred_eval {
-					if self.steps.len() == self.search_steps.len() {
-						return Ok(Some(node));
-					} else {
-						// Add to step state
-						let step = &self.steps[self.search_steps.len()];
-
-						self.search_steps.push(NodeSearch::new_with_state(step.axis, node, eval, &*step.node_test));
+					if let Some(mut append) = append_states {
+						self.search_groupings.append(&mut append);
 					}
+
+					return Ok(Some(node));
 				}
+
+				MoreNodes::No => (),// println!("find_next_node_with_steps() -> MoreNodes::No"),
+
+				MoreNodes::Possible |
+				MoreNodes::FailedPredicate => {
+					// println!("find_next_node_with_steps() -> MoreNodes::Possible | MoreNodes::FailedPredicate");
+
+					self.search_groupings.push(grouping);
+				}
+
+				MoreNodes::Found(node) => unreachable!("find_next_node_with_steps: {:?}", node.as_simple_html()),
+			}
+
+			if let Some(mut append) = append_states {
+				self.search_groupings.append(&mut append);
 			}
 		}
 
@@ -461,7 +473,7 @@ impl Path {
 		if let Some(node) = self.find_next_node_with_steps(eval)? {
 			Ok(Some(node))
 		} else {
-			let mut found = res_opt_catch!(self.start_pos.next_eval(eval)).into_node()?;
+			let found = res_opt_catch!(self.start_pos.next_eval(eval)).into_node()?;
 
 			// Here to ensure we don't loop back around.
 			if &found == eval.starting_eval_node {
@@ -473,20 +485,11 @@ impl Path {
 			}
 
 			// Creates self.search_steps from self.steps.
-			for step in &mut self.steps {
-				let mut state = NodeSearch::new_with_state(step.axis, found, eval, &*step.node_test);
-
-				found = match step.evaluate(eval, &mut state)?.flatten() {
-					Some(v) => v,
-					None => {
-						return Ok(Some(res_opt_catch!(self.find_next_node_with_steps(eval))));
-					}
-				};
-
-				self.search_steps.push(state);
+			if let Some(step) = self.steps.first() {
+				self.search_groupings.push(NodeSearch::new(step.borrow().axis, found, 0));
 			}
 
-			Ok(Some(found))
+			self.find_next_node_with_steps(eval)
 		}
 	}
 }
@@ -504,8 +507,8 @@ impl Expression for Path {
 
 #[derive(Debug)]
 pub struct Step {
-	axis: AxisName,
-	node_test: Box<dyn NodeTest>, // A Step Test
+	pub axis: AxisName,
+	pub node_test: Box<dyn NodeTest>, // A Step Test
 	predicates: Vec<Predicate>
 }
 
@@ -527,29 +530,22 @@ impl Step {
 		}
 	}
 
-	fn evaluate(
+	pub fn evaluate(
 		&mut self,
 		context: &Evaluation,
-		state: &mut NodeSearch
-	) -> Result<Option<Option<Node>>> {
-		// Option<Option<Node>> - 1st Option is used to check if we found a node. 2nd is returning Node if predicates succeed.
+		found_node: FoundNode,
+	) -> Result<MoreNodes<Node>> {
+		let eval = context.new_evaluation_from_with_pos(&found_node.node, found_node.position);
+		// eval.is_last_node = state.is_finished();
+		// TODO: Fix
 
-		let found_node = match state.find_and_cache_next_node(context, self.node_test.as_ref()) {
-			Some(v) => v,
-			None => return Ok(None)
-		};
-
-		let mut eval = context.new_evaluation_from_with_pos(&found_node.node, found_node.position);
-		eval.is_last_node = state.is_finished();
-
-		// Check specifiers.
 		for predicate in &mut self.predicates {
 			if let Some(false) = predicate.matches_eval(&eval)? {
-				return Ok(Some(None));
+				return Ok(MoreNodes::FailedPredicate);
 			}
 		}
 
-		Ok(Some(Some(found_node.node)))
+		Ok(MoreNodes::PassedPredicate(found_node.node))
 	}
 }
 
@@ -584,5 +580,17 @@ impl Function {
 impl Expression for Function {
 	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		self.0.exec(eval, Args::new(self.1.as_mut())).map(Some)
+
+		// TODO: Can't get type_name of dyn Functions' struct.
+		// match self.0.exec(eval, Args::new(self.1.as_mut())) {
+		// 	Ok(v) => Ok(Some(v)),
+		// 	Err(v) => {
+		// 		fn type_name_of_val<T: ?Sized>(_val: &T) -> String {
+		// 			std::any::type_name::<T>().to_string()
+		// 		}
+
+		// 		Err(Error::FunctionError(type_name_of_val(&*self.0), Box::new(v)))
+		// 	}
+		// }
 	}
 }

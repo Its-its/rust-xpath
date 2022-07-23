@@ -313,7 +313,7 @@ impl Node {
 		}
 	}
 
-	pub fn parent(&self) -> Option<Node> {
+	pub fn parent(&self) -> Option<Node> { // TODO: Fix. Example. The Root element would get classified as an Node::Element instead of Node::Root.
 		match self {
 			Node::Attribute(attr) => attr.parent.upgrade()
 				.and_then(|node| get_opt_node_from_cell(&node.parent).map(Node::Element)),
