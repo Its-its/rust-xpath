@@ -68,21 +68,25 @@ pub struct FoundNode {
 
 #[derive(Debug)]
 pub struct NodeSearch {
-	pub step_index: usize,
 	state: NodeSearchState,
 
-	search_steps: Vec<(usize, NodeSearchState)>
+	search_steps: Vec<NodeSearchState>,
+
+	cached: Option<(MoreNodes<Node>, Option<Vec<Self>>)>,
 }
 
 impl NodeSearch {
-	pub fn new_from_state(state: NodeSearchState, step_index: usize) -> Self {
-		Self { step_index, state, search_steps: Vec::new(), }
+	pub fn new_from_state(state: NodeSearchState) -> Self {
+		Self {
+			state,
+			search_steps: Vec::new(),
+			cached: None,
+		}
 	}
 
 	pub fn new(context: AxisName, node: Node, step_index: usize) -> Self {
 		Self::new_from_state(
-			NodeSearchState::new(context, node),
-			step_index,
+			NodeSearchState::new(step_index, context, node),
 		)
 	}
 
@@ -96,14 +100,25 @@ impl NodeSearch {
 
 		let child_eval = super_eval.new_evaluation_from(&state_node);
 
-		self.find_next_node(&child_eval, global_steps)
+		// Initiate cache. Used for "is last node" check
+		if self.cached.is_none() {
+			self.cached = Some(self.find_next_node(&child_eval, global_steps)?);
+		}
+
+		let next = self.find_next_node(&child_eval, global_steps)?;
+
+		Ok(self.cached.replace(next).unwrap())
+	}
+
+	pub fn is_finished(&self) -> bool {
+		self.cached.as_ref().map(|v| v.0.is_no()).unwrap_or(false)
 	}
 
 	/// Iterate until we (hopefully) find a Node.
 	fn find_next_node(&mut self, eval: &Evaluation, global_steps: &[RefCell<Step>]) -> Result<(MoreNodes<Node>, Option<Vec<Self>>)> {
 		let base_state = &mut self.state;
 
-		let base_index = self.step_index;
+		let base_index = base_state.step_index;
 
 		let (node, states) = base_state.find_next_node(
 			eval,
@@ -112,7 +127,7 @@ impl NodeSearch {
 
 		let global_states = states.map(|v|
 			v.into_iter()
-			.map(|state| Self::new_from_state(state, base_index))
+			.map(Self::new_from_state)
 			.collect()
 		);
 
@@ -135,16 +150,16 @@ impl NodeSearch {
 				// Run only once if __base_state hasn't ran before__ AND __base_state axis is descendant__.
 				else if base_state.axis_name == AxisName::Descendant && global_steps[next_step_index].borrow().axis == AxisName::Child {
 					if base_state.found_count == 1 {
-						let curr_state = NodeSearchState::new(global_steps[next_step_index].borrow().axis, base_state.node.clone());
+						let curr_state = NodeSearchState::new(next_step_index, global_steps[next_step_index].borrow().axis, base_state.node.clone());
 
 						// Insert into this group.
-						self.search_steps.push((next_step_index, curr_state));
+						self.search_steps.push(curr_state);
 					}
 				} else {
-					let curr_state = NodeSearchState::new(global_steps[next_step_index].borrow().axis, node);
+					let curr_state = NodeSearchState::new(next_step_index, global_steps[next_step_index].borrow().axis, node);
 
 					// Insert into this group.
-					self.search_steps.push((next_step_index, curr_state));
+					self.search_steps.push(curr_state);
 				}
 
 				//
@@ -175,8 +190,8 @@ impl NodeSearch {
 		}
 
 
-		if let Some((step_index, curr_state)) = self.search_steps.pop() {
-			if let Some(resp) = self.search_inner_step(step_index, curr_state, eval, global_steps)? {
+		if let Some(curr_state) = self.search_steps.pop() {
+			if let Some(resp) = self.search_inner_step(curr_state, eval, global_steps)? {
 				return Ok((resp.0, join_states(global_states, resp.1)));
 			} else {
 				return Ok((MoreNodes::Possible, global_states));
@@ -195,10 +210,10 @@ impl NodeSearch {
 	) -> Result<(MoreNodes<Node>, Option<Vec<Self>>)> {
 		let mut states = None;
 
-		while let Some((step_index, curr_state)) = self.search_steps.pop() {
+		while let Some(curr_state) = self.search_steps.pop() {
 			let curr_step_len = self.search_steps.len() + 1;
 
-			if let Some((node, states_new)) = self.search_inner_step(step_index, curr_state, eval, global_steps)? {
+			if let Some((node, states_new)) = self.search_inner_step(curr_state, eval, global_steps)? {
 				states = join_states(states, states_new);
 
 				// We found a node
@@ -227,11 +242,12 @@ impl NodeSearch {
 	#[allow(clippy::type_complexity)]
 	fn search_inner_step(
 		&mut self,
-		step_index: usize,
 		mut curr_state: NodeSearchState,
 		eval: &Evaluation,
 		global_steps: &[RefCell<Step>]
 	) -> Result<Option<(MoreNodes<Node>, Option<Vec<Self>>)>> {
+		let step_index = curr_state.step_index;
+
 		// Find Nodes in state.
 		let (node, states) = curr_state.find_next_node(
 			eval,
@@ -240,7 +256,7 @@ impl NodeSearch {
 
 		let states = states.map(|v|
 			v.into_iter()
-			.map(|state| Self::new_from_state(state, self.step_index))
+			.map(Self::new_from_state)
 			.collect()
 		);
 
@@ -252,7 +268,7 @@ impl NodeSearch {
 
 		if node.has_more() {
 			// Place state back into array. It could have more Nodes in it.
-			self.search_steps.push((step_index, curr_state));
+			self.search_steps.push(curr_state);
 		}
 
 		match node {
@@ -272,7 +288,7 @@ impl NodeSearch {
 						let next_step_index = step_index + 1;
 
 						// Insert into this group.
-						self.search_steps.push((next_step_index, NodeSearchState::new(global_steps[next_step_index].borrow().axis, node)));
+						self.search_steps.push(NodeSearchState::new(next_step_index, global_steps[next_step_index].borrow().axis, node));
 
 						return Ok(Some((MoreNodes::Possible, states)));
 					}
@@ -294,6 +310,8 @@ impl NodeSearch {
 
 #[derive(Debug)]
 pub struct NodeSearchState {
+	step_index: usize,
+
 	axis_name: AxisName,
 
 	pub(crate) node: Node,
@@ -306,10 +324,11 @@ pub struct NodeSearchState {
 }
 
 impl NodeSearchState {
-	pub fn new(axis_name: AxisName, node: Node) -> Self {
+	pub fn new(step_index: usize, axis_name: AxisName, node: Node) -> Self {
 		Self {
 			axis_name,
 			node,
+			step_index,
 			offset: 0,
 			found_count: 0,
 			cached_nodes: None
@@ -326,7 +345,7 @@ impl NodeSearchState {
 						let states = if parent.is_root() {
 							None
 						} else {
-							Some(vec![Self::new(AxisName::Ancestor, parent.clone())])
+							Some(vec![Self::new(self.step_index, AxisName::Ancestor, parent.clone())])
 						};
 
 						return (MoreNodes::Found(parent), states);
@@ -338,8 +357,8 @@ impl NodeSearchState {
 				return (
 					MoreNodes::No,
 					Some(vec![
-						Self::new(AxisName::Ancestor, self.node.clone()),
-						Self::new(AxisName::SelfAxis, self.node.clone())
+						Self::new(self.step_index, AxisName::Ancestor, self.node.clone()),
+						Self::new(self.step_index, AxisName::SelfAxis, self.node.clone())
 					])
 				);
 			}
@@ -391,7 +410,7 @@ impl NodeSearchState {
 							// Return Current Child
 							MoreNodes::Found(child.clone()),
 							// Append Child to search through
-							Some(vec![NodeSearchState::new(AxisName::Descendant, child)])
+							Some(vec![NodeSearchState::new(self.step_index, AxisName::Descendant, child)])
 						);
 					}
 				}
@@ -401,8 +420,8 @@ impl NodeSearchState {
 				return (
 					MoreNodes::No,
 					Some(vec![
-						Self::new(AxisName::Descendant, self.node.clone()),
-						Self::new(AxisName::SelfAxis, self.node.clone()),
+						Self::new(self.step_index, AxisName::Descendant, self.node.clone()),
+						Self::new(self.step_index, AxisName::SelfAxis, self.node.clone()),
 					])
 				);
 			}
@@ -427,12 +446,12 @@ impl NodeSearchState {
 				// TODO: Might have to re-arrange these two.
 
 				if let Some(node) = nodes.pop() {
-					states.push(Self::new(AxisName::DescendantOrSelf, node));
+					states.push(Self::new(self.step_index, AxisName::DescendantOrSelf, node));
 				}
 
 				// Get the parents children after 'self.node.parent()'
 				if let Some(parent) = self.node.parent() {
-					states.push(Self::new(AxisName::Following, parent));
+					states.push(Self::new(self.step_index, AxisName::Following, parent));
 				}
 
 				return (MoreNodes::No, Some(states));
@@ -492,12 +511,12 @@ impl NodeSearchState {
 
 				if let Some(node) = nodes.pop() {
 					// TODO: Double check to ensure this AxisName is correct. I don't believe it is.
-					states.push(Self::new(AxisName::DescendantOrSelf, node));
+					states.push(Self::new(self.step_index, AxisName::DescendantOrSelf, node));
 				}
 
 				// Get the parents children before 'self.node.parent()'
 				if let Some(parent) = self.node.parent() {
-					states.push(Self::new(AxisName::Preceding, parent));
+					states.push(Self::new(self.step_index, AxisName::Preceding, parent));
 				}
 
 				return (MoreNodes::No, Some(states));
