@@ -24,7 +24,7 @@
 
 use std::{fmt, cell::RefCell};
 
-use crate::{context::{NodeSearch, MoreNodes, FoundNode}, functions::{self, Args}, value::Value};
+use crate::{context::{NodeSearch, MoreNodes, FoundNode, PrePredicate}, functions::{self, Args}, value::Value};
 use crate::{AxisName, Evaluation, Node, NodeTest, Result};
 
 pub type CallFunction = fn(ExpressionArg, ExpressionArg) -> ExpressionArg;
@@ -438,7 +438,7 @@ impl Path {
 		while let Some(mut grouping) = self.search_groupings.pop() {
 			let (found_node, append_states) = grouping.find_and_cache_next_node(eval, &self.steps)?;
 
-			match found_node {
+			match self.process_node(found_node, eval, &mut grouping)? {
 				MoreNodes::PassedPredicate(node) => {
 					self.search_groupings.push(grouping);
 
@@ -491,6 +491,36 @@ impl Path {
 
 			self.find_next_node_with_steps(eval)
 		}
+	}
+
+	fn process_node(&mut self, found_node: MoreNodes<PrePredicate>, eval: &Evaluation, grouping: &mut NodeSearch) -> Result<MoreNodes<Node>> {
+		Ok(match found_node {
+			MoreNodes::Found(pre_pred) => {
+				let eval = eval.new_evaluation_from(&grouping.state.node);
+
+				let passed = self.steps[pre_pred.found_node.step_index].borrow_mut().evaluate(
+					&eval,
+					pre_pred.found_node,
+					grouping,
+				)?;
+
+				if let MoreNodes::PassedPredicate(node) = passed {
+					if pre_pred.is_last_step {
+						return Ok(MoreNodes::PassedPredicate(node));
+					} else if let Some(state) = pre_pred.insert_next_state_if_passed {
+						grouping.search_steps.push(state);
+					}
+				}
+
+				MoreNodes::Possible
+			}
+
+			MoreNodes::Possible => MoreNodes::Possible,
+			MoreNodes::No => MoreNodes::No,
+
+			MoreNodes::PassedPredicate(_) |
+			MoreNodes::FailedPredicate => unimplemented!()
+		})
 	}
 }
 

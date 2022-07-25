@@ -68,11 +68,13 @@ pub struct FoundNode {
 
 #[derive(Debug)]
 pub struct NodeSearch {
-	state: NodeSearchState,
+	pub(crate) state: NodeSearchState,
 
-	search_steps: Vec<NodeSearchState>,
+	pub(crate) search_steps: Vec<NodeSearchState>,
 
-	cached: Option<(MoreNodes<Node>, Option<Vec<Self>>)>,
+	cached: Option<(MoreNodes<PrePredicate>, Option<Vec<Self>>)>,
+
+	total_calls: usize,
 }
 
 impl NodeSearch {
@@ -81,6 +83,7 @@ impl NodeSearch {
 			state,
 			search_steps: Vec::new(),
 			cached: None,
+			total_calls: 0,
 		}
 	}
 
@@ -95,7 +98,7 @@ impl NodeSearch {
 		&mut self,
 		super_eval: &Evaluation,
 		global_steps: &[RefCell<Step>]
-	) -> Result<(MoreNodes<Node>, Option<Vec<Self>>)> {
+	) -> Result<(MoreNodes<PrePredicate>, Option<Vec<Self>>)> {
 		let state_node = self.state.node.clone();
 
 		let child_eval = super_eval.new_evaluation_from(&state_node);
@@ -104,6 +107,8 @@ impl NodeSearch {
 		if self.cached.is_none() {
 			self.cached = Some(self.find_next_node(&child_eval, global_steps)?);
 		}
+
+		self.total_calls += 1;
 
 		let next = self.find_next_node(&child_eval, global_steps)?;
 
@@ -115,7 +120,7 @@ impl NodeSearch {
 	}
 
 	/// Iterate until we (hopefully) find a Node.
-	fn find_next_node(&mut self, eval: &Evaluation, global_steps: &[RefCell<Step>]) -> Result<(MoreNodes<Node>, Option<Vec<Self>>)> {
+	fn find_next_node(&mut self, eval: &Evaluation, global_steps: &[RefCell<Step>]) -> Result<(MoreNodes<PrePredicate>, Option<Vec<Self>>)> {
 		let base_state = &mut self.state;
 
 		let base_index = base_state.step_index;
@@ -139,27 +144,29 @@ impl NodeSearch {
 					base_state.found_count += 1;
 
 					return Ok((
-						// node,
-						global_steps[base_index].borrow_mut().evaluate(
-							eval,
-							FoundNode { node, position: base_state.found_count, step_index: base_index, },
-						)?,
-						global_states
+						MoreNodes::Found(PrePredicate {
+							found_node: FoundNode { node, position: base_state.found_count, step_index: base_index, },
+							is_last_step: true,
+							insert_next_state_if_passed: None,
+						}),
+						global_states,
 					));
 				}
 				// Run only once if __base_state hasn't ran before__ AND __base_state axis is descendant__.
 				else if base_state.axis_name == AxisName::Descendant && global_steps[next_step_index].borrow().axis == AxisName::Child {
-					if base_state.found_count == 1 {
-						let curr_state = NodeSearchState::new(next_step_index, global_steps[next_step_index].borrow().axis, base_state.node.clone());
-
-						// Insert into this group.
-						self.search_steps.push(curr_state);
+					if self.total_calls == 0 {
+						self.search_steps.push(NodeSearchState::new(
+							next_step_index,
+							global_steps[next_step_index].borrow().axis,
+							base_state.node.clone()
+						));
 					}
 				} else {
-					let curr_state = NodeSearchState::new(next_step_index, global_steps[next_step_index].borrow().axis, node);
-
-					// Insert into this group.
-					self.search_steps.push(curr_state);
+					self.search_steps.push(NodeSearchState::new(
+						next_step_index,
+						global_steps[next_step_index].borrow().axis,
+						node
+					));
 				}
 
 				//
@@ -207,7 +214,7 @@ impl NodeSearch {
 		&mut self,
 		eval: &Evaluation,
 		global_steps: &[RefCell<Step>]
-	) -> Result<(MoreNodes<Node>, Option<Vec<Self>>)> {
+	) -> Result<(MoreNodes<PrePredicate>, Option<Vec<Self>>)> {
 		let mut states = None;
 
 		while let Some(curr_state) = self.search_steps.pop() {
@@ -217,7 +224,7 @@ impl NodeSearch {
 				states = join_states(states, states_new);
 
 				// We found a node
-				if node.has_passed_pred() {
+				if node.is_found() {
 					return Ok((node, states));
 				}
 
@@ -245,7 +252,7 @@ impl NodeSearch {
 		mut curr_state: NodeSearchState,
 		eval: &Evaluation,
 		global_steps: &[RefCell<Step>]
-	) -> Result<Option<(MoreNodes<Node>, Option<Vec<Self>>)>> {
+	) -> Result<Option<(MoreNodes<PrePredicate>, Option<Vec<Self>>)>> {
 		let step_index = curr_state.step_index;
 
 		// Find Nodes in state.
@@ -273,27 +280,17 @@ impl NodeSearch {
 
 		match node {
 			MoreNodes::Found(node) => {
-				let passed = global_steps[step_index].borrow_mut().evaluate(
-					eval,
-					FoundNode { node, position: curr_node_pos, step_index, },
-				)?;
+				let next_step_index = step_index + 1;
+				let is_last_step =  global_steps.len() == step_index + 1;
 
-				if let MoreNodes::PassedPredicate(node) = passed {
-					if global_steps.len() == step_index + 1 {
-						return Ok(Some((
-							MoreNodes::PassedPredicate(node),
-							states
-						)));
-					} else {
-						let next_step_index = step_index + 1;
-
-						// Insert into this group.
-						self.search_steps.push(NodeSearchState::new(next_step_index, global_steps[next_step_index].borrow().axis, node));
-
-						return Ok(Some((MoreNodes::Possible, states)));
-					}
-				}
-				// Else, return none
+				return Ok(Some((
+					MoreNodes::Found(PrePredicate {
+						is_last_step,
+						found_node: FoundNode { node: node.clone(), position: curr_node_pos, step_index, },
+						insert_next_state_if_passed: (!is_last_step).then(|| NodeSearchState::new(next_step_index, global_steps[next_step_index].borrow().axis, node)),
+					}),
+					states,
+				)));
 			}
 
 			MoreNodes::Possible => return Ok(Some((MoreNodes::Possible, states))),
@@ -307,6 +304,19 @@ impl NodeSearch {
 		Ok(None)
 	}
 }
+
+
+
+#[derive(Debug)]
+pub struct PrePredicate {
+	pub found_node: FoundNode,
+
+	pub is_last_step: bool,
+
+	pub insert_next_state_if_passed: Option<NodeSearchState>,
+}
+
+
 
 #[derive(Debug)]
 pub struct NodeSearchState {
@@ -659,5 +669,50 @@ fn join_states<V>(left: Option<Vec<V>>, right: Option<Vec<V>>) -> Option<Vec<V>>
 			l.append(&mut r);
 			Some(l)
 		}
+	}
+}
+
+
+pub fn compile_lines(node: &Node) -> String {
+	let mut items = Vec::new();
+
+	if node.is_text() {
+		items.push(format!("{:?}", node_name(node)));
+	} else {
+		items.push(node_name(node));
+	}
+
+	fn iter_through(parent: Option<Node>, items: &mut Vec<String>) {
+		if let Some(item) = parent {
+			let node_parent = item.parent();
+
+			if node_parent.is_some() {
+				items.push(node_name(&item));
+			} else {
+				items.push(String::from("ROOT"));
+			}
+
+			iter_through(node_parent, items);
+		}
+	}
+
+	iter_through(node.parent(), &mut items);
+
+	items.reverse();
+
+	items.join("/")
+}
+
+fn node_name(node: &Node) -> String {
+	if let Some(mut name) = node.as_simple_html() {
+		let found = name.find(|c| c == '>');
+
+		if let Some(found) = found {
+			name.truncate(found + 1);
+		}
+
+		name
+	} else {
+		String::from("ROOT")
 	}
 }
