@@ -422,6 +422,8 @@ pub struct Path {
 	// Each nest should be placed into here. Example: these would be in here: ROOT, html, html/head, html/body, html/body/..., etc..
 	pub search_groupings: Vec<NodeSearch>,
 	pub steps_initiated: bool,
+
+	group_index: usize,
 }
 
 impl Path {
@@ -431,38 +433,80 @@ impl Path {
 			steps: steps.into_iter().map(RefCell::new).collect(),
 			search_groupings: Vec::new(),
 			steps_initiated: false,
+			group_index: 0,
 		}
 	}
 
+	fn remove_grouping(&mut self) -> Option<NodeSearch> {
+		if self.search_groupings.is_empty() {
+			return None;
+		}
+
+		if self.search_groupings.len() >= self.group_index {
+			self.group_index = self.group_index.min(self.search_groupings.len().saturating_sub(1));
+		}
+
+		Some(self.search_groupings.remove(self.group_index))
+	}
+
 	pub fn find_next_node_with_steps(&mut self, eval: &Evaluation) -> Result<Option<Node>> {
+		while let Some(mut grouping) = self.remove_grouping() {
+			let (
+				found_node,
+				append_states
+			) = grouping.find_and_cache_next_node(eval, &self.steps)?;
 		while let Some(mut grouping) = self.search_groupings.pop() {
 			let (found_node, append_states) = grouping.find_and_cache_next_node(eval, &self.steps)?;
 
 			match self.process_node(found_node, eval, &mut grouping)? {
 				MoreNodes::PassedPredicate(node) => {
-					self.search_groupings.push(grouping);
+					self.search_groupings.insert(self.group_index, grouping);
 
-					if let Some(mut append) = append_states {
-						self.search_groupings.append(&mut append);
+					if let Some(append) = append_states {
+						self.group_index += 1;
+
+						self.search_groupings.reserve(append.len());
+
+						// TODO: Optimize
+						append.into_iter()
+							.enumerate()
+							.for_each(|(i, v)| self.search_groupings.insert(self.group_index + i, v));
 					}
 
 					return Ok(Some(node));
 				}
 
-				MoreNodes::No => (),// println!("find_next_node_with_steps() -> MoreNodes::No"),
+				MoreNodes::No => {
+					if let Some(append) = append_states {
+						self.search_groupings.reserve(append.len());
+
+						// TODO: Optimize
+						append.into_iter()
+							.enumerate()
+							.for_each(|(i, v)| self.search_groupings.insert(self.group_index + i, v));
+					}
+				}
+				//(),// println!("find_next_node_with_steps() -> MoreNodes::No"),
 
 				MoreNodes::Possible |
 				MoreNodes::FailedPredicate => {
 					// println!("find_next_node_with_steps() -> MoreNodes::Possible | MoreNodes::FailedPredicate");
 
-					self.search_groupings.push(grouping);
+					self.search_groupings.insert(self.group_index, grouping);
+
+					if let Some(append) = append_states {
+						self.group_index += 1;
+
+						self.search_groupings.reserve(append.len());
+
+						// TODO: Optimize
+						append.into_iter()
+							.enumerate()
+							.for_each(|(i, v)| self.search_groupings.insert(self.group_index + i, v));
+					}
 				}
 
 				MoreNodes::Found(node) => unreachable!("find_next_node_with_steps: {:?}", node.as_simple_html()),
-			}
-
-			if let Some(mut append) = append_states {
-				self.search_groupings.append(&mut append);
 			}
 		}
 
@@ -564,10 +608,10 @@ impl Step {
 		&mut self,
 		context: &Evaluation,
 		found_node: FoundNode,
+		grouping: &NodeSearch,
 	) -> Result<MoreNodes<Node>> {
-		let eval = context.new_evaluation_from_with_pos(&found_node.node, found_node.position);
-		// eval.is_last_node = state.is_finished();
-		// TODO: Fix
+		let mut eval = context.new_evaluation_from_with_pos(&found_node.node, found_node.position);
+		eval.is_last_node = grouping.is_finished();
 
 		for predicate in &mut self.predicates {
 			if let Some(false) = predicate.matches_eval(&eval)? {
