@@ -34,9 +34,10 @@ pub fn parse_document<R: std::io::Read>(data: &mut R) -> Result<Document> {
 
 #[cfg(test)]
 mod tests {
+	#![allow(dead_code)]
+
 	use std::io::Cursor;
 
-	use crate::factory::ProduceIter;
 	pub use crate::nodetest::{NodeTest, NameTest};
 	pub use crate::result::{Result, Error};
 	pub use crate::value::{Value, Node, Nodeset};
@@ -48,60 +49,70 @@ mod tests {
 
 
 	const WEBPAGE: &str = r#"
-	<!DOCTYPE html>
-	<html lang="en">
-		<head>
-			<meta charset="UTF-8">
-			<meta http-equiv="X-UA-Compatible" content="IE=edge">
-			<meta name="viewport" content="width=device-width, initial-scale=1.0">
-			<title>Document</title>
-		</head>
-		<body>
-			<div class="test1">Testing 1</div>
-			<span class="test2">Testing 2</span>
-			<span class="test3">Testing 3</span>
-			<a>Maybe</a>
-			<div class="group1" aria-label="Watch Out!">
-				<h1>The Group is here!</h1>
-				<br/>
-				<a class="clickable1">Don't click!</a>
-			</div>
-			<a class="clickable2">
-				<img src="" alt="unable to display" />
-			</a>
-			<div class="group2" aria-label="Come in!">
-				<a class="clickable1">Open Here!</a>
-				<img src="" alt="unable to display" />
-			</div>
-		</body>
-	</html>"#;
+		<!DOCTYPE html>
+		<html lang="en">
+			<head>
+				<meta charset="UTF-8">
+				<meta http-equiv="X-UA-Compatible" content="IE=edge">
+				<meta name="viewport" content="width=device-width, initial-scale=1.0">
+				<title>Document</title>
+			</head>
+			<body>
+				<div class="test1">Testing 1</div>
+				<span class="test2">Testing 2</span>
+				<span class="test3">Testing 3</span>
+				<a>Maybe</a>
+				<div class="group1" aria-label="Watch Out!">
+					<h1>The Group is here!</h1>
+					<br/>
+					<a class="clickable1">Don't click!</a>
+				</div>
+				<a class="clickable2">
+					<img src="" alt="unable to display" />
+				</a>
+				<div class="group2" aria-label="Come in!">
+					<a class="clickable1">Open Here!</a>
+					<img src="" alt="unable to display" />
+				</div>
+			</body>
+		</html>"#;
 
-	fn evaluate<'a>(doc: &'a Document, search: &'a str) -> Result<ProduceIter<'a>> {
+	fn evaluate(doc: &Document, search: &str) -> Option<Result<Value>> {
 		doc.evaluate(search)
+			.and_then(|mut v| v.next().transpose())
+			.transpose()
+	}
+
+	fn assert_is_some(doc: &Document, search: &str) {
+		assert!(evaluate(doc, search).is_some(), "IS SOME {:?}", search);
+	}
+
+	fn assert_is_none(doc: &Document, search: &str) {
+		assert!(evaluate(doc, search).is_none(), "IS NONE {:?}", search);
 	}
 
 	fn assert_is_error(doc: &Document, search: &str) {
-		assert!(evaluate(doc, search).is_err(), "IS ERR {:?}", search);
+		assert_eq!(evaluate(doc, search).map(|v| v.is_err()), Some(true), "IS ERR {:?}", search);
 	}
 
 	fn assert_is_ok(doc: &Document, search: &str) {
-		assert!(evaluate(doc, search).is_ok(), "IS OK {:?}", search);
+		assert_eq!(evaluate(doc, search).map(|v| v.is_ok()), Some(true), "IS OK {:?}", search);
 	}
 
 	fn assert_eq_count(doc: &Document, search: &str, value: usize) {
-		assert_eq!(evaluate(doc, search).and_then(|v| v.into_nodeset()).map(|v| v.len()), Ok(value), "Count {:?}", search);
+		assert_eq!(doc.evaluate(search).map(|v| v.count()), Ok(value), "Count {:?}", search);
 	}
 
 	fn assert_eq_eval<I: Into<Value>>(doc: &Document, search: &str, value: I) {
-		assert_eq!(evaluate(doc, search), Ok(value.into()), "Eval EQ OK {:?}", search);
+		assert_eq!(evaluate(doc, search), Some(Ok(value.into())), "Eval EQ OK {:?}", search);
 	}
 
 	fn assert_eq_eval_to_string<I: ToString>(doc: &Document, search: &str, value: I) {
-		assert_eq!(evaluate(doc, search).and_then(|v| v.get_first_string()), Ok(value.to_string()), "Eval EQ OK {:?}", search);
+		assert_eq!(evaluate(doc, search).map(|v| v.and_then(|v| v.convert_to_string())), Some(Ok(value.to_string())), "Eval EQ OK {:?}", search);
 	}
 
 	fn assert_eq_err(doc: &Document, search: &str, value: Error) {
-		assert_eq!(evaluate(doc, search), Err(value), "Eval EQ ERR {:?}", search);
+		assert_eq!(evaluate(doc, search), Some(Err(value)), "Eval EQ ERR {:?}", search);
 	}
 
 
@@ -137,8 +148,8 @@ mod tests {
 
 
 		// NaN (using true/false since NaNs' aren't equal)
-		assert_eq!(evaluate(&doc, r#"1 + A"#).and_then(|v| v.number()).map(|v| v.is_nan()), Ok(true));
-		assert_eq!(evaluate(&doc, r#"A + 1"#).and_then(|v| v.number()).map(|v| v.is_nan()), Ok(true));
+		assert_eq!(evaluate(&doc, r#"1 + A"#).and_then(|v| v.ok()?.number().ok()).map(|v| v.is_nan()), Some(true));
+		assert_eq!(evaluate(&doc, r#"A + 1"#).and_then(|v| v.ok()?.number().ok()).map(|v| v.is_nan()), Some(true));
 	}
 
 	#[test]
@@ -196,7 +207,7 @@ mod tests {
 
 	#[test]
 	fn paths_abbreviated() {
-		let doc = parse_document(&mut Cursor::new(WEBPAGE)).unwrap();
+		// let doc = parse_document(&mut Cursor::new(WEBPAGE)).unwrap();
 
 		// println!("Location Paths (Abbreviated Syntax)");
 		// para selects the para element children of the context node
@@ -279,7 +290,7 @@ mod tests {
 
 	#[test]
 	fn general_errors() {
-		let doc = parse_document(&mut Cursor::new(WEBPAGE)).unwrap();
+		// let doc = parse_document(&mut Cursor::new(WEBPAGE)).unwrap();
 
 		// assert_eq_err(&doc, r#"contains("abc123")"#, Error::FunctionError("alloc::boxed::Box<dyn xpather::functions::Function>".to_string(), Box::new(Error::MissingFuncArgument)));
 	}
