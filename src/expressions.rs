@@ -32,22 +32,38 @@ pub type CallFunction = fn(ExpressionArg, ExpressionArg) -> ExpressionArg;
 pub type ExpressionArg = Box<dyn Expression>;
 
 
-macro_rules! res_def_NAN {
+macro_rules! res_opt_def_NAN {
 	($val:expr) => {
-		{
-			let val = $val?;
+		match $val? {
+			Some(v) => v,
+			None => return Ok(Some(Value::Number(f64::NAN)))
+		}
+	};
+}
 
-			if val.number().is_err() {
-				return Ok(Value::Number(f64::NAN))
-			}
-
-			val
+macro_rules! res_opt_def_false {
+	($val:expr) => {
+		match $val? {
+			Some(v) => v,
+			None => return Ok(Some(Value::Boolean(false)))
 		}
 	};
 }
 
 pub trait Expression: fmt::Debug {
-	fn eval(&self, eval: &Evaluation) -> Result<Value>;
+	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>>;
+
+	// Helper Functions
+
+	fn collect(&self, eval: &Evaluation) -> Result<Vec<Value>> {
+		let mut nodes = Vec::new();
+
+		while let Some(node) = self.next_eval(eval)? {
+			nodes.push(node);
+		}
+
+		Ok(nodes)
+	}
 }
 
 
@@ -65,11 +81,11 @@ impl Addition {
 }
 
 impl Expression for Addition {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
-		let left_value = res_def_NAN!(self.left.eval(eval));
-		let right_value = res_def_NAN!(self.right.eval(eval));
+	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+		let left_value = res_opt_def_NAN!(self.left.next_eval(eval));
+		let right_value = res_opt_def_NAN!(self.right.next_eval(eval));
 
-		Ok(Value::Number(left_value.number()? + right_value.number()?))
+		Ok(Some(Value::Number(left_value.number()? + right_value.number()?)))
 	}
 }
 
@@ -87,11 +103,11 @@ impl Subtraction {
 }
 
 impl Expression for Subtraction {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
-		let left_value = res_def_NAN!(self.left.eval(eval));
-		let right_value = res_def_NAN!(self.right.eval(eval));
+	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+		let left_value = res_opt_def_NAN!(self.left.next_eval(eval));
+		let right_value = res_opt_def_NAN!(self.right.next_eval(eval));
 
-		Ok(Value::Number(left_value.number()? - right_value.number()?))
+		Ok(Some(Value::Number(left_value.number()? - right_value.number()?)))
 	}
 }
 
@@ -109,11 +125,11 @@ impl LessThan {
 }
 
 impl Expression for LessThan {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
-		let left_value = self.left.eval(eval)?;
-		let right_value = self.right.eval(eval)?;
+	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+		let left_value = res_opt_def_false!(self.left.next_eval(eval));
+		let right_value = res_opt_def_false!(self.right.next_eval(eval));
 
-		Ok(Value::Boolean(left_value.number()? < right_value.number()?))
+		Ok(Some(Value::Boolean(left_value.number()? < right_value.number()?)))
 	}
 }
 
@@ -131,11 +147,11 @@ impl LessThanEqual {
 }
 
 impl Expression for LessThanEqual {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
-		let left_value = self.left.eval(eval)?;
-		let right_value = self.right.eval(eval)?;
+	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+		let left_value = res_opt_def_false!(self.left.next_eval(eval));
+		let right_value = res_opt_def_false!(self.right.next_eval(eval));
 
-		Ok(Value::Boolean(left_value.number()? <= right_value.number()?))
+		Ok(Some(Value::Boolean(left_value.number()? <= right_value.number()?)))
 	}
 }
 
@@ -153,11 +169,11 @@ impl GreaterThan {
 }
 
 impl Expression for GreaterThan {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
-		let left_value = self.left.eval(eval)?;
-		let right_value = self.right.eval(eval)?;
+	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+		let left_value = res_opt_def_false!(self.left.next_eval(eval));
+		let right_value = res_opt_def_false!(self.right.next_eval(eval));
 
-		Ok(Value::Boolean(left_value.number()? > right_value.number()?))
+		Ok(Some(Value::Boolean(left_value.number()? > right_value.number()?)))
 	}
 }
 
@@ -175,11 +191,11 @@ impl GreaterThanEqual {
 }
 
 impl Expression for GreaterThanEqual {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
-		let left_value = self.left.eval(eval)?;
-		let right_value = self.right.eval(eval)?;
+	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+		let left_value = res_opt_def_false!(self.left.next_eval(eval));
+		let right_value = res_opt_def_false!(self.right.next_eval(eval));
 
-		Ok(Value::Boolean(left_value.number()? >= right_value.number()?))
+		Ok(Some(Value::Boolean(left_value.number()? >= right_value.number()?)))
 	}
 }
 
@@ -201,11 +217,11 @@ impl Equal {
 }
 
 impl Expression for Equal {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
-		let left_value = self.left.eval(eval)?;
-		let right_value = self.right.eval(eval)?;
+	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+		let left_value = res_opt_def_false!(self.left.next_eval(eval));
+		let right_value = res_opt_def_false!(self.right.next_eval(eval));
 
-		Ok(Value::Boolean(left_value == right_value))
+		Ok(Some(Value::Boolean(left_value == right_value)))
 	}
 }
 
@@ -223,11 +239,11 @@ impl NotEqual {
 }
 
 impl Expression for NotEqual {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
-		let left_value = self.left.eval(eval)?;
-		let right_value = self.right.eval(eval)?;
+	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+		let left_value = res_opt_def_false!(self.left.next_eval(eval));
+		let right_value = res_opt_def_false!(self.right.next_eval(eval));
 
-		Ok(Value::Boolean(left_value != right_value))
+		Ok(Some(Value::Boolean(left_value != right_value)))
 	}
 }
 
@@ -245,11 +261,11 @@ impl And {
 }
 
 impl Expression for And {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
-		let left_value = self.left.eval(eval)?;
-		let right_value = self.right.eval(eval)?;
+	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+		let left_value = res_opt_def_false!(self.left.next_eval(eval));
+		let right_value = res_opt_def_false!(self.right.next_eval(eval));
 
-		Ok(Value::Boolean(left_value.boolean()? && right_value.boolean()?))
+		Ok(Some(Value::Boolean(left_value.boolean()? && right_value.boolean()?)))
 	}
 }
 
@@ -268,11 +284,11 @@ impl Or {
 }
 
 impl Expression for Or {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
-		let left_value = self.left.eval(eval)?;
-		let right_value = self.right.eval(eval)?;
+	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+		let left_value = res_opt_def_false!(self.left.next_eval(eval));
+		let right_value = res_opt_def_false!(self.right.next_eval(eval));
 
-		Ok(Value::Boolean(left_value.boolean()? || right_value.boolean()?))
+		Ok(Some(Value::Boolean(left_value.boolean()? || right_value.boolean()?)))
 	}
 }
 
@@ -291,15 +307,25 @@ impl Union {
 }
 
 impl Expression for Union {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
+	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
 		if !*self.skip_left.lock().unwrap() {
 			*self.skip_left.lock().unwrap() = true;
-			let left_value = self.left.eval(eval)?;
 
-			return Ok(left_value);
+			let left_value = self.left.next_eval(eval)?;
+
+			if left_value.is_some() {
+				return Ok(left_value);
+			}
+
 		}
 
-		self.right.eval(eval)
+		let right_value = self.right.next_eval(eval)?;
+
+		if right_value.is_some() {
+			return Ok(right_value);
+		}
+
+		Ok(None)
 	}
 }
 
@@ -314,8 +340,8 @@ impl From<Value> for Literal {
 }
 
 impl Expression for Literal {
-	fn eval(&self, _: &Evaluation) -> Result<Value> {
-		Ok(self.0.clone())
+	fn next_eval(&self, _: &Evaluation) -> Result<Option<Value>> {
+		Ok(Some(self.0.clone()))
 	}
 }
 
@@ -326,8 +352,8 @@ impl Expression for Literal {
 pub struct RootNode;
 
 impl Expression for RootNode {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
-		Ok(Value::Nodeset(vec![eval.root().clone()].into()))
+	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+		Ok(Some(Value::Node(eval.root().clone())))
 	}
 }
 
@@ -336,9 +362,8 @@ impl Expression for RootNode {
 pub struct ContextNode;
 
 impl Expression for ContextNode {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
-		// TODO: Figure out. Cannot clone an Rc
-		Ok(Value::Nodeset(vec![eval.node.clone()].into()))
+	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+		Ok(Some(Value::Node(eval.node.clone())))
 	}
 }
 
@@ -359,15 +384,24 @@ impl Path {
 }
 
 impl Expression for Path {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
-		let result = self.start_pos.eval(eval)?;
-		let mut set = result.into_nodeset()?;
+	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+		let Some(result) = self.start_pos.next_eval(eval)? else {
+			return Ok(None);
+		};
+
+		let mut node = Nodeset { nodes: vec![result.into_node()?] };
 
 		for step in &self.steps {
-			set = step.evaluate(eval, set)?;
+			node = step.evaluate(eval, node)?;
 		}
 
-		Ok(Value::Nodeset(set))
+		println!("{:?}", node);
+
+		if node.is_empty() {
+			Ok(None)
+		} else {
+			Ok(Some(Value::Node(node.nodes.remove(0))))
+		}
 	}
 }
 
@@ -405,12 +439,12 @@ impl Step {
 	) -> Result<Nodeset> {
 		let mut unique = Nodeset::new();
 
-		for node in starting_nodes.nodes {
-			let child_context = context.new_evaluation_from(node);
+		for node in starting_nodes {
+			let child_context = context.new_evaluation_from(&node);
 			let mut nodes = child_context.find_nodes(&self.axis, self.node_test.as_ref());
 
 			for predicate in &self.predicates {
-				nodes = predicate.select(&context, nodes)?;
+				nodes = predicate.select(context, nodes)?;
 			}
 
 			unique.extend(nodes);
@@ -431,16 +465,19 @@ impl Step {
 struct Predicate(ExpressionArg);
 
 impl Predicate {
-	fn select<'c>(
+	fn select(
 		&self,
-		context: &Evaluation<'c>,
+		context: &Evaluation<'_>,
 		nodes: Nodeset,
 	) -> Result<Nodeset> {
-		let found: Vec<Node> = context.new_evaluation_set_from(nodes)
-			.filter_map(|ctx| {
+		let found = nodes
+			.into_iter()
+			.filter_map(|node| {
+				let ctx = context.new_evaluation_from(&node);
+
 				match self.matches_eval(&ctx) {
-					Ok(true) => Some(Ok(ctx.node)),
-					Ok(false) => None,
+					Ok(Some(true)) => Some(Ok(node)),
+					Ok(None) | Ok(Some(false)) => None,
 					Err(e) => Some(Err(e)),
 				}
 			})
@@ -449,15 +486,17 @@ impl Predicate {
 		Ok(found.into())
 	}
 
-	fn matches_eval(&self, context: &Evaluation<'_>) -> Result<bool> {
-		let value = self.0.eval(context)?;
+	fn matches_eval(&self, eval: &Evaluation<'_>) -> Result<Option<bool>> {
+		let Some(value) = self.0.next_eval(eval)? else {
+			return Ok(None);
+		};
 
-		Ok(match value {
+		Ok(Some(match value {
 			// Is Node in the correct position? ex: //node[3]
-			Value::Number(v) => context.position == v as usize,
+			Value::Number(v) => eval.position == v as usize,
 			// Otherwise ensure a value properly exists.
 			_ => value.is_something()
-		})
+		}))
 	}
 }
 
@@ -472,7 +511,19 @@ impl Function {
 }
 
 impl Expression for Function {
-	fn eval(&self, eval: &Evaluation) -> Result<Value> {
-		self.0.exec(eval, Args::new(self.1.as_ref()))
+	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+		self.0.exec(eval, Args::new(self.1.as_ref())).map(Some)
+
+		// TODO: Can't get type_name of dyn Functions' struct.
+		// match self.0.exec(eval, Args::new(self.1.as_mut())) {
+		// 	Ok(v) => Ok(Some(v)),
+		// 	Err(v) => {
+		// 		fn type_name_of_val<T: ?Sized>(_val: &T) -> String {
+		// 			std::any::type_name::<T>().to_string()
+		// 		}
+
+		// 		Err(Error::FunctionError(type_name_of_val(&*self.0), Box::new(v)))
+		// 	}
+		// }
 	}
 }

@@ -38,11 +38,11 @@ pub fn main() -> Result<()> {
 	let document = parse_doc(&mut Cursor::new(WEBPAGE));
 
 	// Should select from clickable1 -> // clickable3
-	let eval = document.evaluate(
+	let mut eval = document.evaluate(
 		"//div[last()]/a/text()" // Add /text() after this works.
 	)?;
 
-	println!("{:?}", eval);
+	println!("{:?}", eval.next());
 
 	// let factory = Factory::new(r#"2 + A"#, &doc, &doc.root);
 

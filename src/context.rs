@@ -6,7 +6,7 @@ use crate::value;
 
 pub struct Evaluation<'a> {
 	pub document: &'a Document,
-	pub node: Node,
+	pub node: &'a Node,
 
 	pub position: usize,
 	pub size: usize
@@ -15,7 +15,7 @@ pub struct Evaluation<'a> {
 
 
 impl<'a> Evaluation<'a> {
-	pub fn new(node: Node, document: &'a Document) -> Evaluation<'a> {
+	pub fn new(node: &'a Node, document: &'a Document) -> Evaluation<'a> {
 		Evaluation {
 			document,
 			node,
@@ -34,7 +34,7 @@ impl<'a> Evaluation<'a> {
 		match context {
 			AxisName::Ancestor => {
 				if let Some(parent) = self.node.parent() {
-					let eval = self.new_evaluation_from(parent);
+					let eval = self.new_evaluation_from(&parent);
 					node_test.test(&eval, &mut nodeset);
 					eval.find_nodes(&AxisName::Ancestor, node_test);
 				}
@@ -52,7 +52,7 @@ impl<'a> Evaluation<'a> {
 						.map(Node::Attribute)
 						.for_each(|node| {
 							node_test.test(
-								&self.new_evaluation_from(node),
+								&self.new_evaluation_from(&node),
 								&mut nodeset
 							);
 						});
@@ -62,14 +62,14 @@ impl<'a> Evaluation<'a> {
 
 			AxisName::Child => {
 				for child in self.node.children() {
-					let new_context = self.new_evaluation_from(child);
+					let new_context = self.new_evaluation_from(&child);
 					node_test.test(&new_context, &mut nodeset);
 				}
 			}
 
 			AxisName::Descendant => {
 				for child in self.node.children() {
-					let new_context = self.new_evaluation_from(child);
+					let new_context = self.new_evaluation_from(&child);
 
 					node_test.test(&new_context, &mut nodeset);
 
@@ -85,17 +85,17 @@ impl<'a> Evaluation<'a> {
 			// excluding any descendants and excluding attribute nodes and namespace nodes
 			AxisName::Following => {
 				// Returns children in current parent after 'self.node'.
-				value::following_nodes_from_parent(&self.node)
+				value::following_nodes_from_parent(self.node)
 				.into_iter()
 				.for_each(|node| nodeset.extend(
-					self.new_evaluation_from(node)
+					self.new_evaluation_from(&node)
 					.find_nodes(&AxisName::DescendantOrSelf, node_test)
 				));
 
 				// Get the parents children after 'self.node.parent()'
 				if let Some(parent) = self.node.parent() {
 					nodeset.extend(
-						self.new_evaluation_from(parent)
+						self.new_evaluation_from(&parent)
 						.find_nodes(&AxisName::Following, node_test)
 					);
 				}
@@ -105,7 +105,7 @@ impl<'a> Evaluation<'a> {
 			AxisName::FollowingSibling => {
 				// Returns children in current parent after 'self.node'.
 				nodeset.extend(
-					value::following_nodes_from_parent(&self.node)
+					value::following_nodes_from_parent(self.node)
 					.into_iter()
 					.collect::<Vec<Node>>()
 					.into()
@@ -127,17 +127,17 @@ impl<'a> Evaluation<'a> {
 			// excluding any ancestors and excluding attribute nodes and namespace nodes
 			AxisName::Preceding => {
 				// Returns children in current parent before 'self.node'.
-				value::preceding_nodes_from_parent(&self.node)
+				value::preceding_nodes_from_parent(self.node)
 				.into_iter()
 				.for_each(|node| nodeset.extend(
-					self.new_evaluation_from(node)
+					self.new_evaluation_from(&node)
 					.find_nodes(&AxisName::DescendantOrSelf, node_test)
 				));
 
 				// Get the parents children before 'self.node.parent()'
 				if let Some(parent) = self.node.parent() {
 					nodeset.extend(
-						self.new_evaluation_from(parent)
+						self.new_evaluation_from(&parent)
 						.find_nodes(&AxisName::Preceding, node_test)
 					);
 				}
@@ -147,7 +147,7 @@ impl<'a> Evaluation<'a> {
 			AxisName::PrecedingSibling => {
 				// Returns children in current parent before 'self.node'.
 				nodeset.extend(
-					value::preceding_nodes_from_parent(&self.node)
+					value::preceding_nodes_from_parent(self.node)
 					.into_iter()
 					.collect::<Vec<Node>>()
 					.into()
@@ -155,14 +155,14 @@ impl<'a> Evaluation<'a> {
 			}
 
 			AxisName::SelfAxis => {
-				node_test.test(&self, &mut nodeset);
+				node_test.test(self, &mut nodeset);
 			}
 		}
 
 		nodeset
 	}
 
-	pub fn new_evaluation_from(&'a self, node: Node) -> Self {
+	pub fn new_evaluation_from(&'a self, node: &'a Node) -> Self {
 		Self {
 			document: self.document,
 			node,
@@ -170,35 +170,4 @@ impl<'a> Evaluation<'a> {
 			size: 1
 		}
 	}
-
-	pub fn new_evaluation_set_from(&'a self, nodes: Nodeset) -> EvaluationNodesetIter<'a> {
-		EvaluationNodesetIter {
-			parent: self,
-			size: nodes.nodes.len(),
-			nodes: nodes.nodes.into_iter().enumerate(),
-		}
-	}
-}
-
-pub struct EvaluationNodesetIter<'a> {
-	parent: &'a Evaluation<'a>,
-	nodes: std::iter::Enumerate<std::vec::IntoIter<Node>>,
-	size: usize
-}
-
-impl<'a> Iterator for EvaluationNodesetIter<'a> {
-    type Item = Evaluation<'a>;
-
-    fn next(&mut self) -> Option<Evaluation<'a>> {
-        if let Some((idx, node)) = self.nodes.next() {
-			Some(Evaluation {
-				document: self.parent.document,
-				node,
-				position: idx + 1,
-				size: self.size
-			})
-		} else {
-			None
-		}
-    }
 }

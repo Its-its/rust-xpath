@@ -1,12 +1,39 @@
-
 use std::iter::Peekable;
 
-use crate::{DEBUG, Tokenizer, Evaluation, Node, ExprToken, Operator, Error, Result, Value, NodeTest, NodeType, PrincipalNodeType, AxisName};
+use crate::{DEBUG, Tokenizer, Evaluation, Node, ExprToken, Operator, Error, Result, Value, NodeTest, NodeType, PrincipalNodeType, AxisName, Nodeset};
 use crate::expressions::*;
 use crate::nodetest;
 use crate::functions;
 
 type ExpressionResult = Result<Option<ExpressionArg>>;
+
+
+
+pub struct ProduceIter<'a> {
+	eval: Evaluation<'a>,
+	expr: ExpressionArg
+}
+
+impl<'a> ProduceIter<'a> {
+	pub fn collect_nodes(mut self) -> Result<Nodeset> {
+		self.try_fold::<_, _, Result<Nodeset>>(
+			Nodeset::new(),
+			|mut set, v| {
+				set.add_node(v?.into_node()?);
+				Ok(set)
+			}
+		)
+	}
+}
+
+impl<'a> Iterator for ProduceIter<'a> {
+	type Item = Result<Value>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.expr.next_eval(&self.eval).transpose()
+	}
+}
+
 
 #[derive(Clone)]
 pub struct Document {
@@ -20,18 +47,16 @@ impl Document {
 		}
 	}
 
-	pub fn evaluate<S: Into<String>>(&self, search: S) -> Result<Value> {
-		self.evaluate_from(search, self.root.clone())
+	pub fn evaluate<S: Into<String>>(&self, search: S) -> Result<ProduceIter<'_>> {
+		self.evaluate_from(search, &self.root)
 	}
 
-	pub fn evaluate_from<S: Into<String>>(&self, search: S, node: Node) -> Result<Value> {
-		Factory::new(search, self, node)
-		.produce()
+	pub fn evaluate_from<'b, 'a: 'b, S: Into<String>>(&'a self, search: S, node: &'a Node) -> Result<ProduceIter<'b>> {
+		Factory::new(search, self, node).produce()
 	}
 
-	pub fn evaluate_steps(&self, steps: Vec<ExprToken>) -> Result<Value> {
-		Factory::new_from_steps(steps, self, self.root.clone())
-		.produce()
+	pub fn evaluate_steps(&self, steps: Vec<ExprToken>) -> Result<ProduceIter> {
+		Factory::new_from_steps(steps, self, &self.root).produce()
 	}
 }
 
@@ -47,15 +72,15 @@ macro_rules! return_value {
 	}};
 }
 
-pub struct Factory<'a> {
-	eval: Evaluation<'a>,
+pub struct Factory<'eval> {
+	eval: Evaluation<'eval>,
 	tokenizer: Tokenizer,
 	token_steps: Vec<ExprToken>,
 	error: Option<Error>
 }
 
-impl<'a> Factory<'a> {
-	pub fn new<S: Into<String>>(query: S, document: &'a Document, node: Node) -> Self {
+impl<'eval, 'b: 'eval> Factory<'eval> {
+	pub fn new<S: Into<String>>(query: S, document: &'eval Document, node: &'b Node) -> Self {
 		Factory {
 			eval: Evaluation::new(node, document),
 			tokenizer: Tokenizer::new(query),
@@ -64,7 +89,7 @@ impl<'a> Factory<'a> {
 		}
 	}
 
-	pub fn new_from_steps(steps: Vec<ExprToken>, document: &'a Document, node: Node) -> Self {
+	pub fn new_from_steps(steps: Vec<ExprToken>, document: &'eval Document, node: &'b Node) -> Self {
 		Factory {
 			eval: Evaluation::new(node, document),
 			tokenizer: Tokenizer::new(""),
@@ -126,7 +151,7 @@ impl<'a> Factory<'a> {
         }
 	}
 
-	pub fn produce(&mut self) -> Result<Value> {
+	pub fn produce(mut self) -> Result<ProduceIter<'eval>> {
 		self.tokenize();
 
 		if self.error.is_none() {
@@ -143,9 +168,9 @@ impl<'a> Factory<'a> {
 				let expr = self.parse_expression(&mut stepper)?;
 
 				match expr {
-					Some(e) => {
-						if DEBUG { println!("Parsed: {:#?}", e); }
-						return e.eval(&self.eval);
+					Some(expr) => {
+						if DEBUG { println!("Parsed: {:#?}", expr); }
+						return Ok(ProduceIter::<'eval> { expr, eval: self.eval });
 					}
 
 					None => {

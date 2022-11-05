@@ -6,6 +6,7 @@ use markup5ever::{Attribute as DomAttribute, QualName};
 use markup5ever_rcdom::{NodeData, Handle as NodeHandle, WeakHandle as WeakNodeHandle, SerializableHandle};
 use html5ever::serialize;
 
+use crate::factory::ProduceIter;
 use crate::{Document, Error};
 use crate::result::{Result, ValueError};
 
@@ -14,7 +15,7 @@ pub enum Value {
 	Boolean(bool),
 	Number(f64),
 	String(String),
-	Nodeset(Nodeset)
+	Node(Node)
 }
 
 impl Value {
@@ -23,39 +24,27 @@ impl Value {
 			Value::Boolean(v) => *v,
 			Value::Number(v) => !v.is_nan(),
 			Value::String(v) => !v.is_empty(),
-			Value::Nodeset(v) => !v.nodes.is_empty()
+			Value::Node(_) => true
 		}
 	}
 
-	pub fn as_nodeset(&self) -> Result<&Nodeset> {
+	pub fn as_node(&self) -> Result<&Node> {
 		match self {
-			Value::Nodeset(s) =>  Ok(s),
+			Self::Node(s) =>  Ok(s),
 			_ => Err(ValueError::Nodeset.into())
 		}
 	}
 
-	pub fn into_nodeset(self) -> Result<Nodeset> {
+	pub fn is_node(&self) -> bool {
+		matches!(self, Self::Node(_))
+	}
+
+	pub fn into_node(self) -> Result<Node> {
 		match self {
-			Value::Nodeset(s) =>  Ok(s),
+			Self::Node(s) =>  Ok(s),
 			_ => Err(ValueError::Nodeset.into())
 		}
 	}
-
-	pub fn into_iterset(self) -> Result<NodeIterset> {
-		match self {
-			Value::Nodeset(s) =>  Ok(NodeIterset::new(s.into_iter())),
-			_ => Err(ValueError::Nodeset.into())
-		}
-	}
-
-	pub fn vec_string(self) -> Result<Vec<String>> {
-		let value_iter = self.into_iterset()?
-			.map(|i| i.value().and_then(|v| v.string()))
-			.collect::<Result<Vec<String>>>()?;
-
-		Ok(value_iter)
-	}
-
 
 	pub fn boolean(&self) -> Result<bool> {
 		match self {
@@ -91,35 +80,11 @@ impl Value {
 	/// Change non-string `Value` to a `String`
 	pub fn convert_to_string(self) -> Result<String> {
 		Ok(match self {
-			Self::Boolean(_) => String::new(),
-			Self::Number(v) => v.to_string(),
-			Self::String(v) => v,
-			this => {
-				let mut array = this.vec_string()?;
-
-				if !array.is_empty() {
-					array.remove(0)
-				} else {
-					return Err(ValueError::String.into());
-				}
-			}
+			Value::Boolean(_) => String::new(),
+			Value::Number(v) => v.to_string(),
+			Value::String(v) => v,
+			Value::Node(v) => v.get_string_value()?,
 		})
-	}
-
-	/// Checks `Value::String` and `Value::Nodeset` for a string value.
-	pub fn get_first_string(self) -> Result<String> {
-		match self {
-			Value::String(v) =>  Ok(v),
-			this => {
-				let mut array = this.vec_string()?;
-
-				if !array.is_empty() {
-					Ok(array.remove(0))
-				} else {
-					Err(ValueError::String.into())
-				}
-			}
-		}
 	}
 }
 
@@ -129,44 +94,32 @@ impl PartialEq for Value {
 			(Self::Number(v1), Self::Number(v2)) => v1 == v2,
 			(Self::Boolean(v1), Self::Boolean(v2)) => v1 == v2,
 			(Self::String(v1), Self::String(v2)) => v1 == v2,
+			(Self::Node(set1), Self::Node(set2)) => set1 == set2,
 
-			// Nodeset == String
-			(Value::Nodeset(set), Value::String(value)) |
-			(Value::String(value), Value::Nodeset(set)) => {
-
-				if set.nodes.is_empty() {
-					return false;
-				}
-
-				set.nodes.iter()
-				.any(|node| {
-					// TODO: No.
-					if &format!("{:?}", node) == value {
-						true
-					} else {
-						match node {
-							Node::Attribute(attr) => {
-								attr.value() == value
-							}
-
-							Node::Text(handle) => {
-								let upgrade = handle.upgrade().unwrap();
-								if let NodeData::Text { contents } = &upgrade.data {
-									contents.try_borrow().map(|v| v.as_ref() == value).unwrap_or_default()
-								} else {
-									false
-								}
-							}
-
-							_ => false
-						}
-					}
-				})
-			}
-
-			(Value::Nodeset(set1), Value::Nodeset(set2)) => {
+			// Node == String
+			(Self::Node(node), Self::String(value)) |
+			(Self::String(value), Self::Node(node)) => {
 				// TODO: No.
-				format!("{:?}", set1) == format!("{:?}", set2)
+				if &format!("{:?}", node) == value {
+					true
+				} else {
+					match node {
+						Node::Attribute(attr) => {
+							attr.value() == value
+						}
+
+						Node::Text(handle) => {
+							let upgrade = handle.upgrade().unwrap();
+							if let NodeData::Text { contents } = &upgrade.data {
+								contents.try_borrow().map(|v| v.as_ref() == value).unwrap_or_default()
+							} else {
+								false
+							}
+						}
+
+						_ => false
+					}
+				}
 			}
 
 			_ => false
@@ -195,9 +148,7 @@ impl From<String> for Value {
 
 impl From<Node> for Value {
 	fn from(val: Node) -> Self {
-		Value::Nodeset(Nodeset {
-			nodes: vec![val]
-		})
+		Value::Node(val)
 	}
 }
 
@@ -233,7 +184,7 @@ impl Attribute {
 		let mut comp = String::new();
 
 		if let Some(prefix) = &self.attr.name.prefix {
-			comp.push_str(&prefix);
+			comp.push_str(prefix);
 			comp.push(':');
 		}
 
@@ -243,7 +194,7 @@ impl Attribute {
 	}
 
 	pub fn value(&self) -> &str {
-		&*self.attr.value
+		&self.attr.value
 	}
 }
 
@@ -305,6 +256,10 @@ impl Node {
 		matches!(self, Node::ProcessingInstruction(_))
 	}
 
+	pub fn get_string_value(&self) -> Result<String> {
+		self.value().and_then(|v| v.string())
+	}
+
 	pub fn value(&self) -> Result<Value> {
 		match self {
 			Node::Attribute(attr) => {
@@ -354,7 +309,7 @@ impl Node {
 		}
 	}
 
-	pub fn parent(&self) -> Option<Node> {
+	pub fn parent(&self) -> Option<Node> { // TODO: Fix. Example. The Root element would get classified as an Node::Element instead of Node::Root.
 		match self {
 			Node::Attribute(attr) => attr.parent.upgrade()
 				.and_then(|node| get_opt_node_from_cell(&node.parent).map(Node::Element)),
@@ -400,6 +355,30 @@ impl Node {
 		}
 	}
 
+	pub fn get_child(&self, index: usize) -> Option<Node> {
+		match self {
+			Node::Root(handle) => {
+				let node = handle.as_ref();
+
+				let children = node.children.borrow();
+
+				Some(children.get(index)?.into())
+			}
+
+			Node::Text(handle) |
+			Node::Comment(handle) |
+			Node::DocType(handle) |
+			Node::Element(handle) => {
+				let node = handle.upgrade()?;
+
+				let children = node.children.borrow();
+
+				Some(children.get(index)?.into())
+			}
+
+			_ => unimplemented!("Node::children(\"{}\")", self.enum_name())
+		}
+	}
 
 	pub fn name(&self) -> Option<QualName> {
 		match self {
@@ -455,8 +434,8 @@ impl Node {
 	}
 
 
-	pub fn evaluate_from<S: Into<String>>(&self, search: S, doc: &Document) -> Result<Value> {
-		doc.evaluate_from(search, self.clone())
+	pub fn evaluate_from<'a, S: Into<String>>(&'a self, search: S, doc: &'a Document) -> Result<ProduceIter<'a>> {
+		doc.evaluate_from(search, self)
 	}
 }
 
@@ -565,7 +544,7 @@ fn find_nodes_from_parent<F: Fn(usize, usize) -> bool>(node: &Node, f_capture: F
 		let i = match children
 			.iter()
 			.enumerate()
-			.find(|&(_, child)| Rc::ptr_eq(&child, &node))
+			.find(|&(_, child)| Rc::ptr_eq(child, &node))
 		{
 			Some((i, _)) => i,
 			None => return Vec::new()

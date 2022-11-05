@@ -34,7 +34,9 @@ pub enum Error {
 	#[error("Invalid Xpath")]
 	InvalidXpath,
 	#[error("Missing Function Argument")]
-	MissingFuncArgument
+	MissingFuncArgument,
+	#[error("Unable to find Value")]
+	UnableToFindValue
 }
 
 impl From<IoErrorBase> for Error {

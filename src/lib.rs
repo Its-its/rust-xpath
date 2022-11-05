@@ -36,6 +36,7 @@ pub fn parse_document<R: std::io::Read>(data: &mut R) -> Result<Document> {
 mod tests {
 	use std::io::Cursor;
 
+	use crate::factory::ProduceIter;
 	pub use crate::nodetest::{NodeTest, NameTest};
 	pub use crate::result::{Result, Error};
 	pub use crate::value::{Value, Node, Nodeset};
@@ -75,7 +76,7 @@ mod tests {
 		</body>
 	</html>"#;
 
-	fn evaluate(doc: &Document, search: &str) -> Result<Value> {
+	fn evaluate<'a>(doc: &'a Document, search: &'a str) -> Result<ProduceIter<'a>> {
 		doc.evaluate(search)
 	}
 
