@@ -1,6 +1,6 @@
 use regex::Regex;
 
-use crate::{Result, Error, NameTest, DEBUG};
+use crate::{Result, Error, NameTest};
 use crate::tokens::{AxisName, ExprToken, Operator, NodeType};
 
 pub type Id<T> = (&'static str, T);
@@ -124,8 +124,6 @@ impl Tokenizer {
 			// Name Test
 			.or_else(|| Tokenizer::parse_name_test(remaining_xpath));
 
-		if DEBUG { println!("--- {:?}", remaining_xpath); }
-
 		if let Some((inc, token)) = found {
 			self.pos += inc;
 			Ok(token)
@@ -137,8 +135,6 @@ impl Tokenizer {
 
 
 	fn parse_token_array<T: Clone + Into<ExprToken>>(rem_path: &str, identities: &[Id<T>]) -> ParseResult {
-		if DEBUG { println!("attempt_parse: {}", identities.len()); }
-
 		for (name, id) in identities {
 			if rem_path.len() < name.len() {
 				continue;
@@ -153,8 +149,6 @@ impl Tokenizer {
 	}
 
 	fn parse_literal(rem_path: &str) -> ParseResult {
-		if DEBUG { println!("parse_literal"); }
-
 		// "[^"]*" | '[^']*'
 		let as_bytes = rem_path.as_bytes();
 
@@ -188,7 +182,6 @@ impl Tokenizer {
 	}
 
 	fn parse_numbers(rem_path: &str) -> ParseResult {
-		if DEBUG { println!("parse_numbers"); }
 		// Digits = [0-9]+
 		// Digits ('.' Digits?)? | '.' Digits
 
@@ -225,7 +218,6 @@ impl Tokenizer {
 	}
 
 	fn parse_current_node(rem_path: &str) -> ParseResult {
-		if DEBUG { println!("parse_current_node"); }
 
 		if rem_path.get(0..1).expect("parse_current_node") == "." {
 			Some((1, ExprToken::Period))
@@ -235,8 +227,6 @@ impl Tokenizer {
 	}
 
 	fn parse_axes(rem_path: &str) -> ParseResult {
-		if DEBUG { println!("parse_axes"); }
-
 		if let Some(mut parsed) = Tokenizer::parse_token_array(rem_path, &AXES) {
 			if rem_path.len() >= parsed.0 + 2 && &rem_path[parsed.0..parsed.0 + 2] == "::" {
 				parsed.0 += 2;
@@ -248,8 +238,6 @@ impl Tokenizer {
 	}
 
 	fn parse_node_types(rem_path: &str) -> ParseResult {
-		if DEBUG { println!("parse_node_types"); }
-
 		if let Some((mut last_pos, results)) = Tokenizer::parse_token_array(rem_path, &NODE_TYPES) {
 			if let Some((size, inner_str)) = Tokenizer::find_function_parenth(&rem_path[last_pos..]) {
 				last_pos += size;
@@ -279,14 +267,12 @@ impl Tokenizer {
 	// NCName		::= Name - (Char* ':' Char*) /* An XML Name, minus the ":" */
 
 	fn parse_function_call(rem_path: &str) -> ParseResult {
-		if DEBUG { println!("parse_function_call"); }
-
 		// FunctionName ::= QName - NodeType (QName excluding NodeTypes)
 		// FunctionCall	::= FunctionName '(' ( Argument ( ',' Argument )* )? ')'
 		// Argument		::= Expr
 
 		// xml.txt: NameStartChar
-		let reg = Regex::new(r#"^[a-zA-Z0-9:_]+"#).unwrap();
+		let reg = Regex::new(r#"^[a-zA-Z0-9:_-]+"#).unwrap();
 
 		if let Some(found) = reg.find(rem_path) {
 			if Tokenizer::find_function_parenth(&rem_path[found.end()..]).is_some() {
@@ -298,8 +284,6 @@ impl Tokenizer {
 	}
 
 	fn parse_variable_ref(rem_path: &str) -> ParseResult {
-		if DEBUG { println!("parse_variable_ref"); }
-
 		// '$' QName
 		let reg = Regex::new(r#"^\$[a-zA-Z0-9:_]+"#).unwrap();
 
@@ -312,8 +296,6 @@ impl Tokenizer {
 	}
 
 	fn parse_name_test(rem_path: &str) -> ParseResult {
-		if DEBUG { println!("parse_name_test"); }
-
 		// '*' | NCName ':' '*' | QName
 		let bytes = rem_path.as_bytes();
 
@@ -359,8 +341,6 @@ impl Tokenizer {
 
 
 	fn find_function_parenth(rem_path: &str) -> Option<(usize, Option<&str>)> {
-		if DEBUG { println!("parse_function_parenth"); }
-
 		let bytes = rem_path.as_bytes();
 
 		if bytes.len() >= 2 && bytes[0] == b'(' {

@@ -18,7 +18,7 @@ pub enum Value {
 }
 
 impl Value {
-	pub fn exists(&self) -> bool {
+	pub fn is_something(&self) -> bool {
 		match self {
 			Value::Boolean(v) => *v,
 			Value::Number(v) => !v.is_nan(),
@@ -59,14 +59,17 @@ impl Value {
 
 	pub fn boolean(&self) -> Result<bool> {
 		match self {
-			Value::Boolean(v) =>  Ok(*v),
+			&Self::Boolean(v) =>  Ok(v),
+			Self::Number(v) if *v == 0.0 => Ok(false),
+			Self::Number(v) if *v == 1.0 => Ok(true),
 			_ => Err(ValueError::Boolean.into())
 		}
 	}
 
 	pub fn number(&self) -> Result<f64> {
-		match self {
-			Value::Number(v) =>  Ok(*v),
+		match *self {
+			Self::Boolean(v) => Ok(if v { 1.0 } else { 0.0 }),
+			Self::Number(v) =>  Ok(v),
 			_ => Err(ValueError::Number.into())
 		}
 	}
@@ -83,6 +86,24 @@ impl Value {
 			Value::String(v) =>  Ok(v),
 			_ => Err(ValueError::String.into())
 		}
+	}
+
+	/// Change non-string `Value` to a `String`
+	pub fn convert_to_string(self) -> Result<String> {
+		Ok(match self {
+			Self::Boolean(_) => String::new(),
+			Self::Number(v) => v.to_string(),
+			Self::String(v) => v,
+			this => {
+				let mut array = this.vec_string()?;
+
+				if !array.is_empty() {
+					array.remove(0)
+				} else {
+					return Err(ValueError::String.into());
+				}
+			}
+		})
 	}
 
 	/// Checks `Value::String` and `Value::Nodeset` for a string value.
@@ -105,9 +126,11 @@ impl Value {
 impl PartialEq for Value {
 	fn eq(&self, other: &Value) -> bool {
 		match (self, other) {
-			(Value::Number(v1), Value::Number(v2)) => v1 == v2,
+			(Self::Number(v1), Self::Number(v2)) => v1 == v2,
+			(Self::Boolean(v1), Self::Boolean(v2)) => v1 == v2,
+			(Self::String(v1), Self::String(v2)) => v1 == v2,
 
-			// Noteset == String
+			// Nodeset == String
 			(Value::Nodeset(set), Value::String(value)) |
 			(Value::String(value), Value::Nodeset(set)) => {
 
@@ -150,6 +173,35 @@ impl PartialEq for Value {
 		}
 	}
 }
+
+
+impl From<bool> for Value {
+	fn from(val: bool) -> Self {
+		Value::Boolean(val)
+	}
+}
+
+impl From<f64> for Value {
+	fn from(val: f64) -> Self {
+		Value::Number(val)
+	}
+}
+
+impl From<String> for Value {
+	fn from(val: String) -> Self {
+		Value::String(val)
+	}
+}
+
+impl From<Node> for Value {
+	fn from(val: Node) -> Self {
+		Value::Nodeset(Nodeset {
+			nodes: vec![val]
+		})
+	}
+}
+
+
 
 #[derive(Clone)]
 pub struct Attribute {
@@ -590,8 +642,8 @@ pub fn compare_nodes(left_upgrade: &NodeHandle, right_upgrade: &NodeHandle) -> b
 			b_name == name ||
 			b_attr == attrs ||
 			Some((b_template_contents, template_contents))
-			.filter(|c| c.0.is_some() || c.1.is_some())
-			.map(|i| compare_nodes(i.0.as_ref().unwrap(), i.1.as_ref().unwrap()))
+			.filter(|c| c.0.borrow().is_some() || c.1.borrow().is_some())
+			.map(|i| compare_nodes(i.0.borrow().as_ref().unwrap(), i.1.borrow().as_ref().unwrap()))
 			.unwrap_or_default() ||
 			b_mathml == mathml_annotation_xml_integration_point
 		}

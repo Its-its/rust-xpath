@@ -23,6 +23,7 @@
 // The tokenization process is described in [3.7 Lexical Structure].
 
 use std::fmt;
+use std::sync::Mutex;
 
 use crate::functions::{self, Args};
 use crate::{DEBUG, Value, Evaluation, Result, AxisName, Nodeset, NodeTest, Node};
@@ -31,9 +32,158 @@ pub type CallFunction = fn(ExpressionArg, ExpressionArg) -> ExpressionArg;
 pub type ExpressionArg = Box<dyn Expression>;
 
 
+macro_rules! res_def_NAN {
+	($val:expr) => {
+		{
+			let val = $val?;
+
+			if val.number().is_err() {
+				return Ok(Value::Number(f64::NAN))
+			}
+
+			val
+		}
+	};
+}
+
 pub trait Expression: fmt::Debug {
 	fn eval(&self, eval: &Evaluation) -> Result<Value>;
 }
+
+
+
+#[derive(Debug)]
+pub struct Addition {
+	left: ExpressionArg,
+	right: ExpressionArg
+}
+
+impl Addition {
+	pub fn new(left: ExpressionArg, right: ExpressionArg) -> Self {
+		Self { left, right }
+	}
+}
+
+impl Expression for Addition {
+	fn eval(&self, eval: &Evaluation) -> Result<Value> {
+		let left_value = res_def_NAN!(self.left.eval(eval));
+		let right_value = res_def_NAN!(self.right.eval(eval));
+
+		Ok(Value::Number(left_value.number()? + right_value.number()?))
+	}
+}
+
+
+#[derive(Debug)]
+pub struct Subtraction {
+	left: ExpressionArg,
+	right: ExpressionArg
+}
+
+impl Subtraction {
+	pub fn new(left: ExpressionArg, right: ExpressionArg) -> Self {
+		Self { left, right }
+	}
+}
+
+impl Expression for Subtraction {
+	fn eval(&self, eval: &Evaluation) -> Result<Value> {
+		let left_value = res_def_NAN!(self.left.eval(eval));
+		let right_value = res_def_NAN!(self.right.eval(eval));
+
+		Ok(Value::Number(left_value.number()? - right_value.number()?))
+	}
+}
+
+
+#[derive(Debug)]
+pub struct LessThan {
+	left: ExpressionArg,
+	right: ExpressionArg
+}
+
+impl LessThan {
+	pub fn new(left: ExpressionArg, right: ExpressionArg) -> Self {
+		Self { left, right }
+	}
+}
+
+impl Expression for LessThan {
+	fn eval(&self, eval: &Evaluation) -> Result<Value> {
+		let left_value = self.left.eval(eval)?;
+		let right_value = self.right.eval(eval)?;
+
+		Ok(Value::Boolean(left_value.number()? < right_value.number()?))
+	}
+}
+
+
+#[derive(Debug)]
+pub struct LessThanEqual {
+	left: ExpressionArg,
+	right: ExpressionArg
+}
+
+impl LessThanEqual {
+	pub fn new(left: ExpressionArg, right: ExpressionArg) -> Self {
+		Self { left, right }
+	}
+}
+
+impl Expression for LessThanEqual {
+	fn eval(&self, eval: &Evaluation) -> Result<Value> {
+		let left_value = self.left.eval(eval)?;
+		let right_value = self.right.eval(eval)?;
+
+		Ok(Value::Boolean(left_value.number()? <= right_value.number()?))
+	}
+}
+
+
+#[derive(Debug)]
+pub struct GreaterThan {
+	left: ExpressionArg,
+	right: ExpressionArg
+}
+
+impl GreaterThan {
+	pub fn new(left: ExpressionArg, right: ExpressionArg) -> Self {
+		Self { left, right }
+	}
+}
+
+impl Expression for GreaterThan {
+	fn eval(&self, eval: &Evaluation) -> Result<Value> {
+		let left_value = self.left.eval(eval)?;
+		let right_value = self.right.eval(eval)?;
+
+		Ok(Value::Boolean(left_value.number()? > right_value.number()?))
+	}
+}
+
+
+#[derive(Debug)]
+pub struct GreaterThanEqual {
+	left: ExpressionArg,
+	right: ExpressionArg
+}
+
+impl GreaterThanEqual {
+	pub fn new(left: ExpressionArg, right: ExpressionArg) -> Self {
+		Self { left, right }
+	}
+}
+
+impl Expression for GreaterThanEqual {
+	fn eval(&self, eval: &Evaluation) -> Result<Value> {
+		let left_value = self.left.eval(eval)?;
+		let right_value = self.right.eval(eval)?;
+
+		Ok(Value::Boolean(left_value.number()? >= right_value.number()?))
+	}
+}
+
+
 
 
 // Operations
@@ -127,6 +277,32 @@ impl Expression for Or {
 }
 
 // Primary Expressions
+#[derive(Debug)]
+pub struct Union {
+	left: ExpressionArg,
+	right: ExpressionArg,
+	skip_left: Mutex<bool>
+}
+
+impl Union {
+	pub fn new(left: ExpressionArg, right: ExpressionArg) -> Self {
+		Self { left, right, skip_left: Mutex::new(false) }
+	}
+}
+
+impl Expression for Union {
+	fn eval(&self, eval: &Evaluation) -> Result<Value> {
+		if !*self.skip_left.lock().unwrap() {
+			*self.skip_left.lock().unwrap() = true;
+			let left_value = self.left.eval(eval)?;
+
+			return Ok(left_value);
+		}
+
+		self.right.eval(eval)
+	}
+}
+
 
 #[derive(Debug)]
 pub struct Literal(Value);
@@ -280,7 +456,7 @@ impl Predicate {
 			// Is Node in the correct position? ex: //node[3]
 			Value::Number(v) => context.position == v as usize,
 			// Otherwise ensure a value properly exists.
-			_ => value.exists()
+			_ => value.is_something()
 		})
 	}
 }

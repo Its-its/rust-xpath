@@ -20,22 +20,21 @@ pub use parser::Tokenizer;
 pub use factory::{Factory, Document};
 
 
-pub static DEBUG: bool = false;
+pub(crate) static DEBUG: bool = true;
 
 
-pub fn parse_doc<R: std::io::Read>(data: &mut R) -> Document {
+pub fn parse_document<R: std::io::Read>(data: &mut R) -> Result<Document> {
 	let parse: markup5ever_rcdom::RcDom = html5ever::parse_document(markup5ever_rcdom::RcDom::default(), Default::default())
 		.from_utf8()
-		.read_from(data)
-		.expect("html5ever");
+		.read_from(data)?;
 
-	Document::new(parse.document.into())
+	Ok(Document::new(parse.document.into()))
 }
 
 
 #[cfg(test)]
 mod tests {
-	use std::fs::File;
+	use std::io::Cursor;
 
 	pub use crate::nodetest::{NodeTest, NameTest};
 	pub use crate::result::{Result, Error};
@@ -44,11 +43,121 @@ mod tests {
 	pub use crate::context::Evaluation;
 	pub use crate::parser::Tokenizer;
 	pub use crate::factory::{Factory, Document};
-	pub use crate::parse_doc;
+	pub use crate::parse_document;
+
+
+	const WEBPAGE: &str = r#"
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8">
+			<meta http-equiv="X-UA-Compatible" content="IE=edge">
+			<meta name="viewport" content="width=device-width, initial-scale=1.0">
+			<title>Document</title>
+		</head>
+		<body>
+			<div class="test1">Testing 1</div>
+			<span class="test2">Testing 2</span>
+			<span class="test3">Testing 3</span>
+			<a>Maybe</a>
+			<div class="group1" aria-label="Watch Out!">
+				<h1>The Group is here!</h1>
+				<br/>
+				<a class="clickable1">Don't click!</a>
+			</div>
+			<a class="clickable2">
+				<img src="" alt="unable to display" />
+			</a>
+			<div class="group2" aria-label="Come in!">
+				<a class="clickable1">Open Here!</a>
+				<img src="" alt="unable to display" />
+			</div>
+		</body>
+	</html>"#;
+
+	fn evaluate(doc: &Document, search: &str) -> Result<Value> {
+		doc.evaluate(search)
+	}
+
+	fn assert_is_error(doc: &Document, search: &str) {
+		assert!(evaluate(doc, search).is_err(), "IS ERR {:?}", search);
+	}
+
+	fn assert_is_ok(doc: &Document, search: &str) {
+		assert!(evaluate(doc, search).is_ok(), "IS OK {:?}", search);
+	}
+
+	fn assert_eq_count(doc: &Document, search: &str, value: usize) {
+		assert_eq!(evaluate(doc, search).and_then(|v| v.into_nodeset()).map(|v| v.len()), Ok(value), "Count {:?}", search);
+	}
+
+	fn assert_eq_eval<I: Into<Value>>(doc: &Document, search: &str, value: I) {
+		assert_eq!(evaluate(doc, search), Ok(value.into()), "Eval EQ OK {:?}", search);
+	}
+
+	fn assert_eq_eval_to_string<I: ToString>(doc: &Document, search: &str, value: I) {
+		assert_eq!(evaluate(doc, search).and_then(|v| v.get_first_string()), Ok(value.to_string()), "Eval EQ OK {:?}", search);
+	}
+
+	fn assert_eq_err(doc: &Document, search: &str, value: Error) {
+		assert_eq!(evaluate(doc, search), Err(value), "Eval EQ ERR {:?}", search);
+	}
+
+
+	#[test]
+	fn expressions() {
+		let doc = parse_document(&mut Cursor::new(WEBPAGE)).unwrap();
+
+		// Simple
+		assert_eq_eval(&doc, r#"1 + 1"#, 2.0);
+		assert_eq_eval(&doc, r#"0 - 2"#, -2.0);
+
+		assert_eq_eval(&doc, r#"-2"#, -2.0);
+
+		assert_eq_eval(&doc, r#"1 != 1"#, false);
+		assert_eq_eval(&doc, r#"1 != 2"#, true);
+
+		assert_eq_eval(&doc, r#"1 = 1"#, true);
+		assert_eq_eval(&doc, r#"1 = 2"#, false);
+
+		assert_eq_eval(&doc, r#"2 > 1"#, true);
+		assert_eq_eval(&doc, r#"1 > 2"#, false);
+		// assert_eq_eval(&doc, r#"3 > 2 > 1"#, false);
+		// assert_eq_eval(&doc, r#"1 > 2 > 3"#, false);
+
+		assert_eq_eval(&doc, r#"2 < 1"#, false);
+		assert_eq_eval(&doc, r#"1 < 2"#, true);
+
+		assert_eq_eval(&doc, r#"2 >= 1"#, true);
+		assert_eq_eval(&doc, r#"1 >= 1"#, true);
+
+		assert_eq_eval(&doc, r#"2 <= 1"#, false);
+		assert_eq_eval(&doc, r#"1 <= 1"#, true);
+
+
+		// NaN (using true/false since NaNs' aren't equal)
+		assert_eq!(evaluate(&doc, r#"1 + A"#).and_then(|v| v.number()).map(|v| v.is_nan()), Ok(true));
+		assert_eq!(evaluate(&doc, r#"A + 1"#).and_then(|v| v.number()).map(|v| v.is_nan()), Ok(true));
+	}
 
 	#[test]
 	fn paths() {
-		// let doc = parse_doc(&mut File::open("./doc/example.html").expect("File::open"));
+		let doc = parse_document(&mut Cursor::new(WEBPAGE)).unwrap();
+
+
+		// == Counting ==
+
+		assert_eq_count(&doc, r#"//div"#, 3);
+		assert_eq_count(&doc, r#"//img"#, 2);
+
+
+		// == Bug corrections ==
+
+		// FIXED BUG: Was causing an error (UnableToFindValue) if element it was comparing against didn't contain class attribute.
+		assert_is_ok(&doc, r#"//div[contains(@class, "group2")]"#);
+		// FIXED BUG: Wasn't prioritizing going into nested elements.
+		assert_eq_eval_to_string(&doc, r#"//a[starts-with(@class, "click")]/@class"#, "clickable1");
+
 
 		println!("Location Paths (Unabbreviated Syntax)");
 		// assert_eq!(doc.evaluate("//head/title"), Ok(Value::Nodeset(vec![].into()))); // selects the document root (which is always the parent of the document element)
@@ -86,6 +195,8 @@ mod tests {
 
 	#[test]
 	fn paths_abbreviated() {
+		let doc = parse_document(&mut Cursor::new(WEBPAGE)).unwrap();
+
 		// println!("Location Paths (Abbreviated Syntax)");
 		// para selects the para element children of the context node
 		// * selects all element children of the context node
@@ -113,6 +224,32 @@ mod tests {
 
 	#[test]
 	fn general_examples() {
+		let doc = parse_document(&mut Cursor::new(WEBPAGE)).unwrap();
+
+		// Simple
+
+		assert_eq_eval(&doc, r#"contains("abc123", "bc12")"#, true);
+		assert_eq_eval(&doc, r#"contains("abc123", "4")"#, false);
+
+		assert_eq_eval(&doc, r#"concat(true, "123")"#, Value::String("123".into()));
+		assert_eq_eval(&doc, r#"concat(false, "123")"#, Value::String("123".into()));
+		assert_eq_eval(&doc, r#"concat(1, "123")"#, Value::String("1123".into()));
+		assert_eq_eval(&doc, r#"concat("abc", "123")"#, Value::String("abc123".into()));
+
+		// TODO: Below doesn't work.
+
+		// assert_eq_eval(&doc, r#"starts-with("abc123", "abc")"#, true);
+		// assert_eq_eval(&doc, r#"starts-with("123", 1)"#, true);
+
+		// assert_eq_eval(&doc, r#"substring-before("abc123", "1")"#, Value::String("abc".into()));
+
+		// assert_eq_eval(&doc, r#"substring-after("abc123", "c")"#, Value::String("123".into()));
+
+
+		// Document Lookups
+
+		assert_eq_eval(&doc, r#"//div[contains(text(), "Testing 1")]/@class"#, Value::String("test1".into()));
+
 		// println!("Examples");
 		// dbg!(doc.evaluate("//*[@id='rcTEST']//*[contains(text(), 'TEST Interactive')]/../button[2]"));
 		// dbg!(doc.evaluate("//*[@id='rcTEST']//*[contains(text(), 'TEST Interactive')]/..//*[contains(text(), 'Setting')]"));
@@ -136,5 +273,13 @@ mod tests {
 		// dbg!(doc.evaluate("//div[div[p[contains(text(),'Status')]]]/preceding-sibling::div/div/span[3]/span"));
 		// dbg!(doc.evaluate("//*[@id='COUPLING']//*[contains(text(),'COUPLE Trend')]/../div/select"));
 		// dbg!(doc.evaluate("//*[@id='ffaHeaderDropdown']//a[contains(text(),'Start Workflow')]"));
+	}
+
+
+	#[test]
+	fn general_errors() {
+		let doc = parse_document(&mut Cursor::new(WEBPAGE)).unwrap();
+
+		// assert_eq_err(&doc, r#"contains("abc123")"#, Error::FunctionError("alloc::boxed::Box<dyn xpather::functions::Function>".to_string(), Box::new(Error::MissingFuncArgument)));
 	}
 }

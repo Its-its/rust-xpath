@@ -2,7 +2,7 @@
 use std::iter::Peekable;
 
 use crate::{DEBUG, Tokenizer, Evaluation, Node, ExprToken, Operator, Error, Result, Value, NodeTest, NodeType, PrincipalNodeType, AxisName};
-use crate::expressions::{ExpressionArg, ContextNode, RootNode, Path, Step, Literal, Equal, NotEqual, And, Or, Function};
+use crate::expressions::*;
 use crate::nodetest;
 use crate::functions;
 
@@ -179,7 +179,7 @@ impl<'a> Factory<'a> {
 		if step.consume_if_next_token_is(Operator::Or)? {
 			let right_expr = self.parse_relational_expression(step)?;
 
-			return Ok(Some(Box::new(Or::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
+			return Ok(Some(Box::new(Or::new(left_expr.unwrap(), right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Or.into()))?))));
 		}
 
 		Ok(left_expr)
@@ -193,7 +193,7 @@ impl<'a> Factory<'a> {
 		if step.consume_if_next_token_is(Operator::And)? {
 			let right_expr = self.parse_relational_expression(step)?;
 
-			return Ok(Some(Box::new(And::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
+			return Ok(Some(Box::new(And::new(left_expr.unwrap(), right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::And.into()))?))));
 		}
 
 		Ok(left_expr)
@@ -207,14 +207,14 @@ impl<'a> Factory<'a> {
 		if step.consume_if_next_token_is(Operator::Equal)? {
 			let right_expr = self.parse_relational_expression(step)?;
 
-			return Ok(Some(Box::new(Equal::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
+			return Ok(Some(Box::new(Equal::new(left_expr.unwrap(), right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Equal.into()))?))));
 		}
 
 		// Self '!=' RelationalExpr
 		if step.consume_if_next_token_is(Operator::DoesNotEqual)? {
 			let right_expr = self.parse_relational_expression(step)?;
 
-			return Ok(Some(Box::new(NotEqual::new(left_expr.unwrap(), right_expr.ok_or(Error::MissingRightHandExpression)?))));
+			return Ok(Some(Box::new(NotEqual::new(left_expr.unwrap(), right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::DoesNotEqual.into()))?))));
 		}
 
 		Ok(left_expr)
@@ -225,9 +225,49 @@ impl<'a> Factory<'a> {
 		let left_expr = self.parse_additive_expression(step)?;
 
 		// Self '<' AdditiveExpr
-		// Self '>' AdditiveExpr
+		if step.consume_if_next_token_is(Operator::LessThan)? {
+			let right_expr = self.parse_relational_expression(step)?;
+
+			return Ok(Some(Box::new(LessThan::new(
+				left_expr.unwrap(),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::LessThan.into()))?
+			))));
+		}
+
 		// Self '<=' AdditiveExpr
+		if step.consume_if_next_token_is(Operator::LessThanOrEqual)? {
+			let right_expr = self.parse_relational_expression(step)?;
+
+			return Ok(Some(Box::new(LessThanEqual::new(
+				left_expr.unwrap(),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::LessThanOrEqual.into()))?
+			))));
+		}
+
+		// Self '>' AdditiveExpr
+		if step.consume_if_next_token_is(Operator::GreaterThan)? {
+			let right_expr = self.parse_relational_expression(step)?;
+
+			return Ok(Some(Box::new(GreaterThan::new(
+				left_expr.unwrap(),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::GreaterThan.into()))?
+			))));
+		}
+
+		// TODO
+		// Value      3 > 2  > 1   ||   3 > 2 = false (0) > 1 = false
+		// currently  3 > (2 > 1)
+		// should be (3 > 2) > 1
+
 		// Self '>=' AdditiveExpr
+		if step.consume_if_next_token_is(Operator::GreaterThanOrEqual)? {
+			let right_expr = self.parse_relational_expression(step)?;
+
+			return Ok(Some(Box::new(GreaterThanEqual::new(
+				left_expr.unwrap(),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::GreaterThanOrEqual.into()))?
+			))));
+		}
 
 		Ok(left_expr)
 	}
@@ -237,7 +277,24 @@ impl<'a> Factory<'a> {
 		let left_expr = self.parse_multiplicative_expression(step)?;
 
 		// Self '+' MultiplicativeExpr
+		if step.consume_if_next_token_is(Operator::Plus)? {
+			let right_expr = self.parse_multiplicative_expression(step)?;
+
+			return Ok(Some(Box::new(Addition::new(
+				left_expr.unwrap(),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Plus.into()))?
+			))));
+		}
+
 		// Self '-' MultiplicativeExpr
+		if step.consume_if_next_token_is(Operator::Minus)? {
+			let right_expr = self.parse_multiplicative_expression(step)?;
+
+			return Ok(Some(Box::new(Subtraction::new(
+				left_expr.unwrap(),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Minus.into()))?
+			))));
+		}
 
 		Ok(left_expr)
 	}
@@ -255,19 +312,33 @@ impl<'a> Factory<'a> {
 
 	// UnaryExpr			::= UnionExpr | '-' Self
 	fn parse_unary_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		if step.is_next_token(Operator::Minus) {
-			let _ = step.consume(Operator::Minus)?;
-		}
-		// TODO: If missing union after consuming minus.
+		if step.consume_if_next_token_is(Operator::Minus)? {
+			let right_expr = self.parse_union_expression(step)?;
 
-		self.parse_union_expression(step)
+			Ok(Some(Box::new(Subtraction::new(
+				Box::new(Literal::from(Value::Number(0.0))),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Minus.into()))?
+			))))
+		} else {
+			self.parse_union_expression(step)
+		}
 	}
 
 	// UnionExpr			::= PathExpr | Self '|' PathExpr
 	fn parse_union_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		self.parse_path_expression(step)
+		let left_expr = self.parse_path_expression(step)?;
 
-		//  Self '|' PathExpr
+		// Self '|' PathExpr
+		if step.consume_if_next_token_is(Operator::Pipe)? {
+			let right_expr = self.parse_path_expression(step)?;
+
+			return Ok(Some(Box::new(Union::new(
+				left_expr.unwrap(),
+				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Pipe.into()))?
+			))));
+		}
+
+		Ok(left_expr)
 	}
 
 
@@ -346,20 +417,18 @@ impl<'a> Factory<'a> {
                 while step.is_next_token(Operator::ForwardSlash) {
 					step.consume(Operator::ForwardSlash)?;
 
-					// TODO: Correctly fix Operator::Star in Tokenizer
-					// if step.is_next_token(&Operator::Star.into()) {
-					// 	step.consume(&Operator::Star.into())?;
+					if step.is_next_token(Operator::Star) {
+						step.consume(Operator::Star)?;
 
-					// 	steps.push( Step::new(
-					// 		AxisName::Child,
-					// 		Box::new(nodetest::Element::new(nodetest::NameTest { prefix: None, local_part: "*".into() })),
-					// 		Vec::new()
-					// 	));
-					// } else {
-					// }
-					let next = self.parse_step(step)?;
-					steps.push(next.ok_or(Error::TrailingSlash)?);
-
+						steps.push(Step::new(
+							AxisName::Child,
+							Box::new(nodetest::Element::new(nodetest::NameTest { prefix: None, local_part: "*".into() })),
+							Vec::new()
+						));
+					} else {
+						let next = self.parse_step(step)?;
+						steps.push(next.ok_or(Error::TrailingSlash)?);
+					}
                 }
 
                 Ok(Some(Box::new(Path::new(start_point, steps))))
@@ -513,14 +582,12 @@ impl<'a> Factory<'a> {
 					nodetest::ProcessingInstruction::new(target),
 				))),
 			}
-		} else {
-			// if step.is_next_token(&Operator::Star.into()) {
-			// 	step.consume(&Operator::Star.into())?;
+		} else if step.is_next_token(Operator::Star) {
+			step.consume(Operator::Star)?;
 
-			// 	Ok(Some(Box::new(nodetest::Element::new(nodetest::NameTest { prefix: None, local_part: "*".into() }))))
-			// } else {
-				Ok(None)
-			// }
+			Ok(Some(Box::new(nodetest::Element::new(nodetest::NameTest { prefix: None, local_part: "*".into() }))))
+		} else {
+			Ok(None)
 		}
 	}
 

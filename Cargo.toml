@@ -2,7 +2,7 @@
 name = "xpather"
 version = "0.2.0"
 authors = ["Timothy <programming@its.rip>"]
-edition = "2018"
+edition = "2021"
 license = "MIT"
 homepage = "https://github.com/Its-its/rust-xpath"
 respository = "https://github.com/Its-its/rust-xpath"
@@ -13,8 +13,8 @@ description = "A remake of sxd-xpath to teach myself more about parsing from scr
 [dependencies]
 regex = "1.4"
 
-html5ever = "0.25"
-markup5ever = "0.10"
-markup5ever_rcdom  = "0.1"
+html5ever = "0.26"
+markup5ever = "0.11"
+markup5ever_rcdom  = "0.2"
 
 thiserror = "1.0"
