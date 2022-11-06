@@ -1,7 +1,7 @@
 use crate::NameTest;
 
 // https://www.w3.org/TR/1999/REC-xpath-19991116/#NT-AxisName
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AxisName {
     /// 'ancestor'
     /// Contains the ancestors of the context node;
@@ -64,14 +64,14 @@ impl AxisName {
 
 // PartialEq<markup5ever::Attribute> for NameTest
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PrincipalNodeType {
     Attribute,
     Namespace,
     Element,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeType {
     Comment,
     Text,
@@ -79,7 +79,7 @@ pub enum NodeType {
     Node,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operator {
     // OperatorName
     /// 'and'
@@ -185,38 +185,26 @@ impl ExprToken {
 
 macro_rules! from_impl {
     ($struct:ident, $enum:ident) => {
-        impl Into<ExprToken> for $struct {
-            fn into(self) -> ExprToken {
-                ExprToken::$enum(self)
+        impl From<$struct> for ExprToken {
+            fn from(value: $struct) -> Self {
+                Self::$enum(value)
             }
         }
 
-        impl Into<ExprToken> for &$struct {
-            fn into(self) -> ExprToken {
-                ExprToken::$enum(self.clone())
+        impl From<&$struct> for ExprToken {
+            fn from(value: &$struct) -> Self {
+                Self::$enum(value.clone())
             }
         }
 
-        impl Into<Option<$struct>> for ExprToken {
-            fn into(self) -> Option<$struct> {
-                match self {
+        impl From<ExprToken> for Option<$struct> {
+            fn from(value: ExprToken) -> Self {
+                match value {
                     ExprToken::$enum(op) => Some(op),
                     _ => None,
                 }
             }
         }
-
-        // impl From<$struct> for ExprToken {
-        // 	fn from(op: $struct) -> ExprToken {
-        // 		ExprToken::$enum(op)
-        // 	}
-        // }
-
-        // impl From<&$struct> for ExprToken {
-        // 	fn from(op: &$struct) -> ExprToken {
-        // 		ExprToken::$enum(op.clone())
-        // 	}
-        // }
     };
 }
 

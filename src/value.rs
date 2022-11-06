@@ -629,11 +629,10 @@ pub fn compare_nodes(left_upgrade: &NodeHandle, right_upgrade: &NodeHandle) -> b
     // Find first position where it's false.
     // If we found a non-equal child it'll return Some(pos)
     // So we need to ensure it's None
-    l_children
+    !l_children
         .iter()
         .zip(r_children.iter())
-        .position(|c| !compare_nodes(c.0, c.1))
-        .is_none()
+        .any(|c| !compare_nodes(c.0, c.1))
 }
 
 // impl From<Attribute> for Node {
@@ -672,7 +671,7 @@ impl fmt::Debug for Node {
 }
 
 // TODO: Ensure no duplicate nodes
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Nodeset {
     pub nodes: Vec<Node>,
 }
@@ -703,11 +702,6 @@ impl Nodeset {
     }
 }
 
-impl Default for Nodeset {
-    fn default() -> Self {
-        Nodeset { nodes: Vec::new() }
-    }
-}
 
 impl IntoIterator for Nodeset {
     type Item = Node;
