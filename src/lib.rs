@@ -20,9 +20,6 @@ pub use parser::Tokenizer;
 pub use factory::{Factory, Document};
 
 
-pub(crate) static DEBUG: bool = true;
-
-
 pub fn parse_document<R: std::io::Read>(data: &mut R) -> Result<Document> {
 	let parse: markup5ever_rcdom::RcDom = html5ever::parse_document(markup5ever_rcdom::RcDom::default(), Default::default())
 		.from_utf8()
@@ -82,7 +79,9 @@ mod tests {
 
 	use std::io::Cursor;
 
-	pub use crate::nodetest::{NodeTest, NameTest};
+	use tracing::debug;
+
+pub use crate::nodetest::{NodeTest, NameTest};
 	pub use crate::result::{Result, Error};
 	pub use crate::value::{Value, Node, Nodeset};
 	pub use crate::tokens::{ExprToken, AxisName, NodeType, Operator, PrincipalNodeType};
@@ -215,7 +214,7 @@ mod tests {
 		assert_eq_eval_to_string(&doc, r#"//a[starts-with(@class, "click")]/@class"#, "clickable1");
 
 
-		println!("Location Paths (Unabbreviated Syntax)");
+		debug!("Location Paths (Unabbreviated Syntax)");
 		// assert_eq!(doc.evaluate("//head/title"), Ok(Value::Nodeset(vec![].into()))); // selects the document root (which is always the parent of the document element)
 		// dbg!(doc.evaluate("self::para")); // selects the context node if it is a para element, and otherwise selects nothing
 		// dbg!(doc.evaluate("child::para")); // selects the para element children of the context node
@@ -253,7 +252,7 @@ mod tests {
 	fn paths_abbreviated() {
 		// let doc = parse_document(&mut Cursor::new(WEBPAGE)).unwrap();
 
-		// println!("Location Paths (Abbreviated Syntax)");
+		// debug!("Location Paths (Abbreviated Syntax)");
 		// para selects the para element children of the context node
 		// * selects all element children of the context node
 		// text() selects all text node children of the context node
@@ -306,7 +305,7 @@ mod tests {
 
 		assert_eq_eval(&doc, r#"//div[contains(text(), "Testing 1")]/@class"#, Value::String("test1".into()));
 
-		// println!("Examples");
+		// debug!("Examples");
 		// dbg!(doc.evaluate("//*[@id='rcTEST']//*[contains(text(), 'TEST Interactive')]/../button[2]"));
 		// dbg!(doc.evaluate("//*[@id='rcTEST']//*[contains(text(), 'TEST Interactive')]/..//*[contains(text(), 'Setting')]"));
 		// dbg!(doc.evaluate("//*[@id='rcTEST']//*[contains(text(), 'TEST Interactive')]/following-sibling::button"));

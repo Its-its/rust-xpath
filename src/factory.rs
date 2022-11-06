@@ -1,6 +1,8 @@
 use std::iter::Peekable;
 
-use crate::{DEBUG, Tokenizer, Evaluation, Node, ExprToken, Operator, Error, Result, Value, NodeTest, NodeType, PrincipalNodeType, AxisName, Nodeset};
+use tracing::{error, trace, Level};
+
+use crate::{Tokenizer, Evaluation, Node, ExprToken, Operator, Error, Result, Value, NodeTest, NodeType, PrincipalNodeType, AxisName, Nodeset};
 use crate::expressions::*;
 use crate::nodetest;
 use crate::functions;
@@ -104,9 +106,9 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 		while !self.tokenizer.is_finished() {
 			match self.tokenizer.next().unwrap() {
 				Ok(step) => self.expand_abbreviation(step),
-				Err(e) => {
-					eprintln!("{:?}", e);
-					self.error = Some(e);
+				Err(error) => {
+					error!(?error);
+					self.error = Some(error);
 					return;
 				}
 			}
@@ -155,11 +157,11 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 		self.tokenize();
 
 		if self.error.is_none() {
-			if DEBUG {
-				println!("Steps");
+			if tracing::enabled!(Level::TRACE) {
+				trace!("Steps");
 				self.token_steps
 				.iter()
-				.for_each(|t| println!(" - {:?}", t));
+				.for_each(|t| trace!(" - {:?}", t));
 			}
 
 			let mut stepper = Stepper::new(self.token_steps.clone().into_iter().peekable());
@@ -169,7 +171,7 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 
 				match expr {
 					Some(expr) => {
-						if DEBUG { println!("Parsed: {:#?}", expr); }
+						trace!("Parsed: {:#?}", expr);
 						return Ok(ProduceIter::<'eval> { expr, eval: self.eval });
 					}
 
@@ -181,7 +183,7 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 			}
 
 			if !stepper.has_more_tokens() {
-				println!("Finished.");
+				trace!("Finished.");
 			}
 		}
 
@@ -669,9 +671,9 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 // let found = tokenizer.collect::<Vec<parser::TokenResult>>();
 
 // if found.iter().find(|i| i.is_err()).is_some() {
-// 	println!("Err('{}'): {:?}", query, found);
+// 	debug!("Err('{}'): {:?}", query, found);
 // } else {
-// 	println!("Ok('{}'): {:?}", query, found.into_iter().map(|i| i.unwrap()).collect::<Vec<_>>());
+// 	debug!("Ok('{}'): {:?}", query, found.into_iter().map(|i| i.unwrap()).collect::<Vec<_>>());
 // }
 
 //

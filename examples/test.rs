@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use html5ever::tendril::TendrilSink;
-use tracing::Level;
+use tracing::{Level, debug};
 use tracing::subscriber::set_global_default;
 use tracing_subscriber::FmtSubscriber;
 use xpather::result::Result;
@@ -39,7 +39,7 @@ const WEBPAGE: &str = r#"
 
 pub fn main() -> Result<()> {
 	let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::DEBUG)
+        .with_max_level(Level::TRACE)
         .with_file(false)
         .with_line_number(true)
         .finish();
@@ -52,7 +52,7 @@ pub fn main() -> Result<()> {
 		r#"//a[starts-with(@class, "click")]/@class"#
 	)?;
 
-	println!("{:?}", eval.next());
+	debug!("{:?}", eval.next());
 
 	// let factory = Factory::new(r#"2 + A"#, &doc, &doc.root);
 
@@ -60,16 +60,16 @@ pub fn main() -> Result<()> {
 
 	// let mut prod = factory.produce()?;
 
-	// println!("{:?}", now.elapsed());
+	// debug!("{:?}", now.elapsed());
 
 	// let now = Instant::now();
 
-	// println!("Output");
+	// debug!("Output");
 
-	// // println!("{:#?}", prod.collect_nodes());
-	// println!("{:#?}", prod.next());
+	// // debug!("{:#?}", prod.collect_nodes());
+	// debug!("{:#?}", prod.next());
 
-	// println!("{:?}", now.elapsed());
+	// debug!("{:?}", now.elapsed());
 
 	Ok(())
 }

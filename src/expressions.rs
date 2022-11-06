@@ -25,8 +25,10 @@
 use std::fmt;
 use std::sync::Mutex;
 
+use tracing::{trace, Level};
+
 use crate::functions::{self, Args};
-use crate::{DEBUG, Value, Evaluation, Result, AxisName, Nodeset, NodeTest, Node};
+use crate::{Value, Evaluation, Result, AxisName, Nodeset, NodeTest, Node};
 
 pub type CallFunction = fn(ExpressionArg, ExpressionArg) -> ExpressionArg;
 pub type ExpressionArg = Box<dyn Expression>;
@@ -400,7 +402,7 @@ impl Expression for Path {
 		if self.found_cache.is_none() {
 			self.cached_from = Some(eval.node.clone());
 
-			if DEBUG { println!("VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV"); }
+			trace!("VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV");
 
 			let Some(result) = self.start_pos.next_eval(eval)? else {
 				return Ok(None);
@@ -408,7 +410,7 @@ impl Expression for Path {
 
 			let node = result.into_node()?;
 
-			if DEBUG { println!("-> {}", crate::compile_lines(&node)); }
+			trace!("-> {}", crate::compile_lines(&node));
 
 			let mut nodes = Nodeset { nodes: vec![node] };
 
@@ -417,18 +419,15 @@ impl Expression for Path {
 				nodes = step.evaluate(eval, nodes, prev_step_axis)?;
 				prev_step_axis = Some(step.axis);
 
-				if DEBUG {
-					println!("Step [{i}]");
+				if tracing::enabled!(Level::TRACE) {
+					trace!("Step [{i}]");
 					nodes.nodes.iter()
-					.for_each(|node| println!("    {}", crate::compile_lines(node)));
+					.for_each(|node| trace!("    {}", crate::compile_lines(node)));
 				}
 			}
 
-			if DEBUG {
-				println!("<- {nodes:?}");
-
-				println!("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
-			}
+			trace!("<- {nodes:?}");
+			trace!("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
 
 			// Reverse it so we can use .pop later.
 			nodes.nodes.reverse();
@@ -488,9 +487,9 @@ impl Step {
 			unique.extend(nodes);
 		}
 
-		if DEBUG && !self.predicates.is_empty() {
-			println!("Pre Predicate:");
-			println!("{:#?}", unique);
+		if !self.predicates.is_empty() {
+			trace!("Pre Predicate:");
+			trace!("{:#?}", unique);
 		}
 
 		Ok(unique)
@@ -518,9 +517,7 @@ impl Predicate {
 			ctx.position = index + 1;
 			ctx.size = node_count;
 
-			if DEBUG {
-				println!("Pred [{index}] {}", crate::compile_lines(&node));
-			}
+			trace!("Pred [{index}] {}", crate::compile_lines(&node));
 
 			if let Some(true) = self.matches_eval(&ctx)? {
 				found.push(node)

@@ -1,4 +1,5 @@
 use regex::Regex;
+use tracing::error;
 
 use crate::{Result, Error, NameTest};
 use crate::tokens::{AxisName, ExprToken, Operator, NodeType};
@@ -172,7 +173,7 @@ impl Tokenizer {
 				// Add 1 to start, remove 1 from end to remove both quotes.
 				Some((end_pos, ExprToken::Literal(rem_path[1..end_pos - 1].to_string())))
 			} else {
-				eprintln!("Invalid Literal Found");
+				error!("Invalid Literal Found");
 				// TODO: Error instead since it's not a valid literal.
 				None
 			}
@@ -197,7 +198,7 @@ impl Tokenizer {
 				if as_bytes[end_pos] == b'.' {
 					if used_decimal {
 						// TODO: Return Error
-						eprintln!("Multiple Decimals detected.");
+						error!("Multiple Decimals detected.");
 						return None;
 					}
 					used_decimal = true;
@@ -319,7 +320,7 @@ impl Tokenizer {
 				// valid.append(&mut (0xE000..=0xFFFD).collect());
 				// valid.append(&mut (0x10000..=0x10FFFF).collect());
 
-				// println!("{}", String::from_utf16_lossy(&valid));
+				// debug!("{}", String::from_utf16_lossy(&valid));
 
 				// Prefix ':' LocalPart | LocalPart
 				let reg = Regex::new(r#"(^[a-zA-Z0-9_-]+:?(?:[a-zA-Z0-9_-]+)?)"#).unwrap();
