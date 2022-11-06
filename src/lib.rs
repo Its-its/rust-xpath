@@ -11,12 +11,14 @@ pub mod functions;
 pub mod expressions;
 pub mod nodetest;
 
-pub use nodetest::{NodeTest, NameTest};
+pub(crate) use context::Evaluation;
+pub(crate) use value::{Node, Nodeset};
+pub(crate) use tokens::{ExprToken, AxisName, NodeType, Operator, PrincipalNodeType};
+pub(crate) use parser::Tokenizer;
+pub(crate) use nodetest::{NodeTest, NameTest};
+
 pub use result::{Result, Error};
-pub use value::{Value, Node, Nodeset};
-pub use tokens::{ExprToken, AxisName, NodeType, Operator, PrincipalNodeType};
-pub use context::Evaluation;
-pub use parser::Tokenizer;
+pub use value::Value;
 pub use factory::{Factory, Document};
 
 
