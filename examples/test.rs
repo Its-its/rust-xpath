@@ -1,6 +1,9 @@
 use std::io::Cursor;
 
 use html5ever::tendril::TendrilSink;
+use tracing::Level;
+use tracing::subscriber::set_global_default;
+use tracing_subscriber::FmtSubscriber;
 use xpather::result::Result;
 use xpather::factory::Document;
 
@@ -35,11 +38,18 @@ const WEBPAGE: &str = r#"
 	</html>"#;
 
 pub fn main() -> Result<()> {
+	let subscriber = FmtSubscriber::builder()
+        .with_max_level(Level::DEBUG)
+        .with_file(false)
+        .with_line_number(true)
+        .finish();
+
+    set_global_default(subscriber).expect("setting default subscriber failed");
+
 	let document = parse_doc(&mut Cursor::new(WEBPAGE));
 
-	// Should select from clickable1 -> // clickable3
 	let mut eval = document.evaluate(
-		"//div[last()]/a/text()" // Add /text() after this works.
+		r#"//a[starts-with(@class, "click")]/@class"#
 	)?;
 
 	println!("{:?}", eval.next());
