@@ -1,38 +1,36 @@
 // https://www.w3.org/TR/1999/REC-xpath-19991116/#node-tests
 
-
 use std::fmt;
 
-use markup5ever::{QualName, Namespace as Ns, LocalName};
+use markup5ever::{LocalName, Namespace as Ns, QualName};
 
-use crate::{Evaluation, Nodeset, Node as DomNode};
+use crate::{Evaluation, Node as DomNode, Nodeset};
 
 pub trait NodeTest: fmt::Debug {
-	fn test(&self, context: &Evaluation, result: &mut Nodeset);
+    fn test(&self, context: &Evaluation, result: &mut Nodeset);
 }
-
 
 // TODO: Convert to markup5ever::QualName
 #[derive(Debug, Clone, PartialEq)]
-pub struct NameTest { // '*' | NCName ':' '*' | QName
-	pub prefix: Option<String>,
-	pub local_part: String
+pub struct NameTest {
+    // '*' | NCName ':' '*' | QName
+    pub prefix: Option<String>,
+    pub local_part: String,
 }
 
 impl NameTest {
-	fn is_match(&self, _context: &Evaluation, qname: &QualName) -> bool {
-		let has_wildcard = self.local_part == "*";
+    fn is_match(&self, _context: &Evaluation, qname: &QualName) -> bool {
+        let has_wildcard = self.local_part == "*";
 
-		// TODO: Compare prefix
+        // TODO: Compare prefix
 
-		if has_wildcard {
-			true
-		} else {
-			self.local_part.as_str() == &qname.local
-		}
-	}
+        if has_wildcard {
+            true
+        } else {
+            self.local_part.as_str() == &qname.local
+        }
+    }
 }
-
 
 // 5.3 Attribute Nodes
 // Each element node has an associated set of attribute nodes;
@@ -77,28 +75,26 @@ impl NameTest {
 // There are no attribute nodes corresponding to attributes that declare namespaces (see [XML Names]).
 #[derive(Debug)]
 pub struct Attribute {
-	name_test: NameTest,
+    name_test: NameTest,
 }
 
 impl Attribute {
-	pub fn new(name: NameTest) -> Attribute {
-		Attribute { name_test: name }
-	}
+    pub fn new(name: NameTest) -> Attribute {
+        Attribute { name_test: name }
+    }
 }
 
 impl NodeTest for Attribute {
-	fn test(&self, context: &Evaluation, result: &mut Nodeset) {
-		if context.node.is_attribute() {
-			if let Some(attr) = context.node.attribute() {
-				if self.name_test.is_match(context, &attr.attr.name) {
-					result.add_node(context.node.clone());
-				}
-			}
-		}
-	}
+    fn test(&self, context: &Evaluation, result: &mut Nodeset) {
+        if context.node.is_attribute() {
+            if let Some(attr) = context.node.attribute() {
+                if self.name_test.is_match(context, &attr.attr.name) {
+                    result.add_node(context.node.clone());
+                }
+            }
+        }
+    }
 }
-
-
 
 // 5.4 Namespace Nodes
 
@@ -124,42 +120,47 @@ impl NodeTest for Attribute {
 // The string-value of a namespace node is the namespace URI that is being bound to the namespace prefix; if it is relative, it must be resolved just like a namespace URI in an expanded-name.
 #[derive(Debug)]
 pub struct Namespace {
-	name_test: NameTest,
+    name_test: NameTest,
 }
 
 impl Namespace {
-	pub fn new(name_test: NameTest) -> Namespace {
-		Namespace { name_test }
-	}
+    pub fn new(name_test: NameTest) -> Namespace {
+        Namespace { name_test }
+    }
 }
 
 impl NodeTest for Namespace {
-	fn test(&self, context: &Evaluation, result: &mut Nodeset) {
-		if context.node.is_namespace() && self.name_test.is_match(context, &QualName::new(None, Ns::from(""), LocalName::from(context.node.prefix()))) {
-			result.add_node(context.node.clone());
-		}
-	}
+    fn test(&self, context: &Evaluation, result: &mut Nodeset) {
+        if context.node.is_namespace()
+            && self.name_test.is_match(
+                context,
+                &QualName::new(None, Ns::from(""), LocalName::from(context.node.prefix())),
+            )
+        {
+            result.add_node(context.node.clone());
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct Element {
-	name_test: NameTest,
+    name_test: NameTest,
 }
 
 impl Element {
-	pub fn new(name_test: NameTest) -> Element {
-		Element { name_test }
-	}
+    pub fn new(name_test: NameTest) -> Element {
+        Element { name_test }
+    }
 }
 
 impl NodeTest for Element {
-	fn test(&self, context: &Evaluation, result: &mut Nodeset) {
-		if let Some(name) = context.node.name() {
-			if context.node.is_element() && self.name_test.is_match(context, &name) {
-				result.add_node(context.node.clone());
-			}
-		}
-	}
+    fn test(&self, context: &Evaluation, result: &mut Nodeset) {
+        if let Some(name) = context.node.name() {
+            if context.node.is_element() && self.name_test.is_match(context, &name) {
+                result.add_node(context.node.clone());
+            }
+        }
+    }
 }
 
 #[allow(missing_copy_implementations)]
@@ -167,9 +168,9 @@ impl NodeTest for Element {
 pub struct Node;
 
 impl NodeTest for Node {
-	fn test(&self, context: &Evaluation, result: &mut Nodeset) {
-		result.add_node(context.node.clone());
-	}
+    fn test(&self, context: &Evaluation, result: &mut Nodeset) {
+        result.add_node(context.node.clone());
+    }
 }
 
 #[allow(missing_copy_implementations)]
@@ -177,11 +178,11 @@ impl NodeTest for Node {
 pub struct Text;
 
 impl NodeTest for Text {
-	fn test(&self, context: &Evaluation, result: &mut Nodeset) {
-		if let DomNode::Text(_) = context.node {
-			result.add_node(context.node.clone());
-		}
-	}
+    fn test(&self, context: &Evaluation, result: &mut Nodeset) {
+        if let DomNode::Text(_) = context.node {
+            result.add_node(context.node.clone());
+        }
+    }
 }
 
 #[allow(missing_copy_implementations)]
@@ -189,32 +190,34 @@ impl NodeTest for Text {
 pub struct Comment;
 
 impl NodeTest for Comment {
-	fn test(&self, context: &Evaluation, result: &mut Nodeset) {
-		if let DomNode::Comment(_) = context.node {
-			result.add_node(context.node.clone());
-		}
-	}
+    fn test(&self, context: &Evaluation, result: &mut Nodeset) {
+        if let DomNode::Comment(_) = context.node {
+            result.add_node(context.node.clone());
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct ProcessingInstruction {
-	target: Option<String>,
+    target: Option<String>,
 }
 
 impl ProcessingInstruction {
-	pub fn new(target: Option<String>) -> ProcessingInstruction {
-		ProcessingInstruction { target }
-	}
+    pub fn new(target: Option<String>) -> ProcessingInstruction {
+        ProcessingInstruction { target }
+    }
 }
 
 impl NodeTest for ProcessingInstruction {
-	fn test(&self, context: &Evaluation, result: &mut Nodeset) {
-		if context.node.is_processing_instruction() {
-			match (self.target.as_deref(), context.node.target()) {
-				(Some(name), Some(ref context_target)) if name == context_target => result.add_node(context.node.clone()),
-				(None, _) => result.add_node(context.node.clone()),
-				_ => {}
-			}
-		}
-	}
+    fn test(&self, context: &Evaluation, result: &mut Nodeset) {
+        if context.node.is_processing_instruction() {
+            match (self.target.as_deref(), context.node.target()) {
+                (Some(name), Some(ref context_target)) if name == context_target => {
+                    result.add_node(context.node.clone())
+                }
+                (None, _) => result.add_node(context.node.clone()),
+                _ => {}
+            }
+        }
+    }
 }

@@ -2,384 +2,447 @@ use std::iter::Peekable;
 
 use tracing::{error, trace, Level};
 
-use crate::{Tokenizer, Evaluation, Node, ExprToken, Operator, Error, Result, Value, NodeTest, NodeType, PrincipalNodeType, AxisName, Nodeset};
 use crate::expressions::*;
-use crate::nodetest;
 use crate::functions;
+use crate::nodetest;
+use crate::{
+    AxisName, Error, Evaluation, ExprToken, Node, NodeTest, NodeType, Nodeset, Operator,
+    PrincipalNodeType, Result, Tokenizer, Value,
+};
 
 type ExpressionResult = Result<Option<ExpressionArg>>;
 
-
-
 pub struct ProduceIter<'a> {
-	eval: Evaluation<'a>,
-	expr: ExpressionArg
+    eval: Evaluation<'a>,
+    expr: ExpressionArg,
 }
 
 impl<'a> ProduceIter<'a> {
-	pub fn collect_nodes(mut self) -> Result<Nodeset> {
-		self.try_fold::<_, _, Result<Nodeset>>(
-			Nodeset::new(),
-			|mut set, v| {
-				set.add_node(v?.into_node()?);
-				Ok(set)
-			}
-		)
-	}
+    pub fn collect_nodes(mut self) -> Result<Nodeset> {
+        self.try_fold::<_, _, Result<Nodeset>>(Nodeset::new(), |mut set, v| {
+            set.add_node(v?.into_node()?);
+            Ok(set)
+        })
+    }
 }
 
 impl<'a> Iterator for ProduceIter<'a> {
-	type Item = Result<Value>;
+    type Item = Result<Value>;
 
-	fn next(&mut self) -> Option<Self::Item> {
-		self.expr.next_eval(&self.eval).transpose()
-	}
+    fn next(&mut self) -> Option<Self::Item> {
+        self.expr.next_eval(&self.eval).transpose()
+    }
 }
-
 
 #[derive(Clone)]
 pub struct Document {
-	pub root: Node
+    pub root: Node,
 }
 
 impl Document {
-	pub fn new(root: Node) -> Self {
-		Self {
-			root
-		}
-	}
+    pub fn new(root: Node) -> Self {
+        Self { root }
+    }
 
-	pub fn evaluate<S: Into<String>>(&self, search: S) -> Result<ProduceIter<'_>> {
-		self.evaluate_from(search, &self.root)
-	}
+    pub fn evaluate<S: Into<String>>(&self, search: S) -> Result<ProduceIter<'_>> {
+        self.evaluate_from(search, &self.root)
+    }
 
-	pub fn evaluate_from<'b, 'a: 'b, S: Into<String>>(&'a self, search: S, node: &'a Node) -> Result<ProduceIter<'b>> {
-		Factory::new(search, self, node).produce()
-	}
+    pub fn evaluate_from<'b, 'a: 'b, S: Into<String>>(
+        &'a self,
+        search: S,
+        node: &'a Node,
+    ) -> Result<ProduceIter<'b>> {
+        Factory::new(search, self, node).produce()
+    }
 
-	pub fn evaluate_steps(&self, steps: Vec<ExprToken>) -> Result<ProduceIter> {
-		Factory::new_from_steps(steps, self, &self.root).produce()
-	}
+    pub fn evaluate_steps(&self, steps: Vec<ExprToken>) -> Result<ProduceIter> {
+        Factory::new_from_steps(steps, self, &self.root).produce()
+    }
 }
 
-
 macro_rules! return_value {
-	($stepper:expr, ExprToken::$token:ident) => {{
-		let step = $stepper.next().ok_or(Error::InputEmpty)?;
+    ($stepper:expr, ExprToken::$token:ident) => {{
+        let step = $stepper.next().ok_or(Error::InputEmpty)?;
 
-		match step {
-			ExprToken::$token(v) => v,
-			s => return Err(Error::UnexpectedToken(s))
-		}
-	}};
+        match step {
+            ExprToken::$token(v) => v,
+            s => return Err(Error::UnexpectedToken(s)),
+        }
+    }};
 }
 
 pub struct Factory<'eval> {
-	eval: Evaluation<'eval>,
-	tokenizer: Tokenizer,
-	token_steps: Vec<ExprToken>,
-	error: Option<Error>
+    eval: Evaluation<'eval>,
+    tokenizer: Tokenizer,
+    token_steps: Vec<ExprToken>,
+    error: Option<Error>,
 }
 
 impl<'eval, 'b: 'eval> Factory<'eval> {
-	pub fn new<S: Into<String>>(query: S, document: &'eval Document, node: &'b Node) -> Self {
-		Factory {
-			eval: Evaluation::new(node, document),
-			tokenizer: Tokenizer::new(query),
-			token_steps: Vec::new(),
-			error: None
-		}
-	}
-
-	pub fn new_from_steps(steps: Vec<ExprToken>, document: &'eval Document, node: &'b Node) -> Self {
-		Factory {
-			eval: Evaluation::new(node, document),
-			tokenizer: Tokenizer::new(""),
-			token_steps: steps,
-			error: None
-		}
-	}
-
-
-	// Parse query, place tokens into token_steps.
-	fn tokenize(&mut self) {
-		while !self.tokenizer.is_finished() {
-			match self.tokenizer.next().unwrap() {
-				Ok(step) => self.expand_abbreviation(step),
-				Err(error) => {
-					error!(?error);
-					self.error = Some(error);
-					return;
-				}
-			}
-		}
-	}
-
-	// https://www.w3.org/TR/1999/REC-xpath-19991116/#path-abbrev
-	fn expand_abbreviation(&mut self, token: ExprToken) {
-		match token {
-			//
-			ExprToken::AtSign => {
-				self.token_steps.push(AxisName::Attribute.into());
-			}
-
-			//
-            ExprToken::Operator(Operator::DoubleForwardSlash) => {
-				self.token_steps.extend([
-					Operator::ForwardSlash.into(),
-					AxisName::DescendantOrSelf.into(),
-					NodeType::Node.into(),
-					Operator::ForwardSlash.into()
-				].iter().cloned());
-			}
-
-			//
-            ExprToken::Period => {
-				self.token_steps.extend([
-					AxisName::SelfAxis.into(),
-					NodeType::Node.into()
-				].iter().cloned());
-			}
-
-			//
-            ExprToken::ParentNode => {
-				self.token_steps.extend([
-					AxisName::Parent.into(),
-					NodeType::Node.into()
-				].iter().cloned());
-			}
-
-            _ => self.token_steps.push(token)
+    pub fn new<S: Into<String>>(query: S, document: &'eval Document, node: &'b Node) -> Self {
+        Factory {
+            eval: Evaluation::new(node, document),
+            tokenizer: Tokenizer::new(query),
+            token_steps: Vec::new(),
+            error: None,
         }
-	}
+    }
 
-	pub fn produce(mut self) -> Result<ProduceIter<'eval>> {
-		self.tokenize();
+    pub fn new_from_steps(
+        steps: Vec<ExprToken>,
+        document: &'eval Document,
+        node: &'b Node,
+    ) -> Self {
+        Factory {
+            eval: Evaluation::new(node, document),
+            tokenizer: Tokenizer::new(""),
+            token_steps: steps,
+            error: None,
+        }
+    }
 
-		if self.error.is_none() {
-			if tracing::enabled!(Level::TRACE) {
-				trace!("Steps");
-				self.token_steps
-				.iter()
-				.for_each(|t| trace!(" - {:?}", t));
-			}
+    // Parse query, place tokens into token_steps.
+    fn tokenize(&mut self) {
+        while !self.tokenizer.is_finished() {
+            match self.tokenizer.next().unwrap() {
+                Ok(step) => self.expand_abbreviation(step),
+                Err(error) => {
+                    error!(?error);
+                    self.error = Some(error);
+                    return;
+                }
+            }
+        }
+    }
 
-			let mut stepper = Stepper::new(self.token_steps.clone().into_iter().peekable());
+    // https://www.w3.org/TR/1999/REC-xpath-19991116/#path-abbrev
+    fn expand_abbreviation(&mut self, token: ExprToken) {
+        match token {
+            //
+            ExprToken::AtSign => {
+                self.token_steps.push(AxisName::Attribute.into());
+            }
 
-			if stepper.has_more_tokens() {
-				let expr = self.parse_expression(&mut stepper)?;
+            //
+            ExprToken::Operator(Operator::DoubleForwardSlash) => {
+                self.token_steps.extend(
+                    [
+                        Operator::ForwardSlash.into(),
+                        AxisName::DescendantOrSelf.into(),
+                        NodeType::Node.into(),
+                        Operator::ForwardSlash.into(),
+                    ]
+                    .iter()
+                    .cloned(),
+                );
+            }
 
-				match expr {
-					Some(expr) => {
-						trace!("Parsed: {:#?}", expr);
-						return Ok(ProduceIter::<'eval> { expr, eval: self.eval });
-					}
+            //
+            ExprToken::Period => {
+                self.token_steps.extend(
+                    [AxisName::SelfAxis.into(), NodeType::Node.into()]
+                        .iter()
+                        .cloned(),
+                );
+            }
 
-					None => {
-						// Couldn't find it. Invalid xpath.
-						return Err(Error::InvalidXpath);
-					}
-				}
-			}
+            //
+            ExprToken::ParentNode => {
+                self.token_steps.extend(
+                    [AxisName::Parent.into(), NodeType::Node.into()]
+                        .iter()
+                        .cloned(),
+                );
+            }
 
-			if !stepper.has_more_tokens() {
-				trace!("Finished.");
-			}
-		}
+            _ => self.token_steps.push(token),
+        }
+    }
 
-		Err(Error::UnableToEvaluate)
-	}
+    pub fn produce(mut self) -> Result<ProduceIter<'eval>> {
+        self.tokenize();
 
+        if self.error.is_none() {
+            if tracing::enabled!(Level::TRACE) {
+                trace!("Steps");
+                self.token_steps.iter().for_each(|t| trace!(" - {:?}", t));
+            }
 
-	// Parse Types
+            let mut stepper = Stepper::new(self.token_steps.clone().into_iter().peekable());
 
-	// Expr					::= OrExpr
-	fn parse_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		self.parse_or_expression(step)
-	}
+            if stepper.has_more_tokens() {
+                let expr = self.parse_expression(&mut stepper)?;
 
-	// OrExpr				::= AndExpr | Self 'or' AndExpr
-	fn parse_or_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		let left_expr = self.parse_and_expression(step)?;
+                match expr {
+                    Some(expr) => {
+                        trace!("Parsed: {:#?}", expr);
+                        return Ok(ProduceIter::<'eval> {
+                            expr,
+                            eval: self.eval,
+                        });
+                    }
 
-		// Self 'or' AndExpr
-		if step.consume_if_next_token_is(Operator::Or)? {
-			let right_expr = self.parse_relational_expression(step)?;
+                    None => {
+                        // Couldn't find it. Invalid xpath.
+                        return Err(Error::InvalidXpath);
+                    }
+                }
+            }
 
-			return Ok(Some(Box::new(Or::new(left_expr.unwrap(), right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Or.into()))?))));
-		}
+            if !stepper.has_more_tokens() {
+                trace!("Finished.");
+            }
+        }
 
-		Ok(left_expr)
-	}
+        Err(Error::UnableToEvaluate)
+    }
 
-	// AndExpr				::= EqualityExpr | Self 'and' EqualityExpr
-	fn parse_and_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		let left_expr = self.parse_equality_expression(step)?;
+    // Parse Types
 
-		// Self 'and' EqualityExpr
-		if step.consume_if_next_token_is(Operator::And)? {
-			let right_expr = self.parse_relational_expression(step)?;
+    // Expr					::= OrExpr
+    fn parse_expression<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> ExpressionResult {
+        self.parse_or_expression(step)
+    }
 
-			return Ok(Some(Box::new(And::new(left_expr.unwrap(), right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::And.into()))?))));
-		}
+    // OrExpr				::= AndExpr | Self 'or' AndExpr
+    fn parse_or_expression<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> ExpressionResult {
+        let left_expr = self.parse_and_expression(step)?;
 
-		Ok(left_expr)
-	}
+        // Self 'or' AndExpr
+        if step.consume_if_next_token_is(Operator::Or)? {
+            let right_expr = self.parse_relational_expression(step)?;
 
-	// EqualityExpr			::= RelationalExpr | Self '=' RelationalExpr | Self '!=' RelationalExpr
-	fn parse_equality_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		let left_expr = self.parse_relational_expression(step)?;
+            return Ok(Some(Box::new(Or::new(
+                left_expr.unwrap(),
+                right_expr
+                    .ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Or.into()))?,
+            ))));
+        }
 
-		// Self '=' RelationalExpr
-		if step.consume_if_next_token_is(Operator::Equal)? {
-			let right_expr = self.parse_relational_expression(step)?;
+        Ok(left_expr)
+    }
 
-			return Ok(Some(Box::new(Equal::new(left_expr.unwrap(), right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Equal.into()))?))));
-		}
+    // AndExpr				::= EqualityExpr | Self 'and' EqualityExpr
+    fn parse_and_expression<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> ExpressionResult {
+        let left_expr = self.parse_equality_expression(step)?;
 
-		// Self '!=' RelationalExpr
-		if step.consume_if_next_token_is(Operator::DoesNotEqual)? {
-			let right_expr = self.parse_relational_expression(step)?;
+        // Self 'and' EqualityExpr
+        if step.consume_if_next_token_is(Operator::And)? {
+            let right_expr = self.parse_relational_expression(step)?;
 
-			return Ok(Some(Box::new(NotEqual::new(left_expr.unwrap(), right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::DoesNotEqual.into()))?))));
-		}
+            return Ok(Some(Box::new(And::new(
+                left_expr.unwrap(),
+                right_expr
+                    .ok_or_else(|| Error::ExpectedRightHandExpression(Operator::And.into()))?,
+            ))));
+        }
 
-		Ok(left_expr)
-	}
+        Ok(left_expr)
+    }
 
-	// RelationalExpr		::= AdditiveExpr | Self '<' AdditiveExpr | Self '>' AdditiveExpr | Self '<=' AdditiveExpr | Self '>=' AdditiveExpr
-	fn parse_relational_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		let left_expr = self.parse_additive_expression(step)?;
+    // EqualityExpr			::= RelationalExpr | Self '=' RelationalExpr | Self '!=' RelationalExpr
+    fn parse_equality_expression<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> ExpressionResult {
+        let left_expr = self.parse_relational_expression(step)?;
 
-		// Self '<' AdditiveExpr
-		if step.consume_if_next_token_is(Operator::LessThan)? {
-			let right_expr = self.parse_relational_expression(step)?;
+        // Self '=' RelationalExpr
+        if step.consume_if_next_token_is(Operator::Equal)? {
+            let right_expr = self.parse_relational_expression(step)?;
 
-			return Ok(Some(Box::new(LessThan::new(
-				left_expr.unwrap(),
-				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::LessThan.into()))?
-			))));
-		}
+            return Ok(Some(Box::new(Equal::new(
+                left_expr.unwrap(),
+                right_expr
+                    .ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Equal.into()))?,
+            ))));
+        }
 
-		// Self '<=' AdditiveExpr
-		if step.consume_if_next_token_is(Operator::LessThanOrEqual)? {
-			let right_expr = self.parse_relational_expression(step)?;
+        // Self '!=' RelationalExpr
+        if step.consume_if_next_token_is(Operator::DoesNotEqual)? {
+            let right_expr = self.parse_relational_expression(step)?;
 
-			return Ok(Some(Box::new(LessThanEqual::new(
-				left_expr.unwrap(),
-				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::LessThanOrEqual.into()))?
-			))));
-		}
+            return Ok(Some(Box::new(NotEqual::new(
+                left_expr.unwrap(),
+                right_expr.ok_or_else(|| {
+                    Error::ExpectedRightHandExpression(Operator::DoesNotEqual.into())
+                })?,
+            ))));
+        }
 
-		// Self '>' AdditiveExpr
-		if step.consume_if_next_token_is(Operator::GreaterThan)? {
-			let right_expr = self.parse_relational_expression(step)?;
+        Ok(left_expr)
+    }
 
-			return Ok(Some(Box::new(GreaterThan::new(
-				left_expr.unwrap(),
-				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::GreaterThan.into()))?
-			))));
-		}
+    // RelationalExpr		::= AdditiveExpr | Self '<' AdditiveExpr | Self '>' AdditiveExpr | Self '<=' AdditiveExpr | Self '>=' AdditiveExpr
+    fn parse_relational_expression<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> ExpressionResult {
+        let left_expr = self.parse_additive_expression(step)?;
 
-		// TODO
-		// Value      3 > 2  > 1   ||   3 > 2 = false (0) > 1 = false
-		// currently  3 > (2 > 1)
-		// should be (3 > 2) > 1
+        // Self '<' AdditiveExpr
+        if step.consume_if_next_token_is(Operator::LessThan)? {
+            let right_expr = self.parse_relational_expression(step)?;
 
-		// Self '>=' AdditiveExpr
-		if step.consume_if_next_token_is(Operator::GreaterThanOrEqual)? {
-			let right_expr = self.parse_relational_expression(step)?;
+            return Ok(Some(Box::new(LessThan::new(
+                left_expr.unwrap(),
+                right_expr
+                    .ok_or_else(|| Error::ExpectedRightHandExpression(Operator::LessThan.into()))?,
+            ))));
+        }
 
-			return Ok(Some(Box::new(GreaterThanEqual::new(
-				left_expr.unwrap(),
-				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::GreaterThanOrEqual.into()))?
-			))));
-		}
+        // Self '<=' AdditiveExpr
+        if step.consume_if_next_token_is(Operator::LessThanOrEqual)? {
+            let right_expr = self.parse_relational_expression(step)?;
 
-		Ok(left_expr)
-	}
+            return Ok(Some(Box::new(LessThanEqual::new(
+                left_expr.unwrap(),
+                right_expr.ok_or_else(|| {
+                    Error::ExpectedRightHandExpression(Operator::LessThanOrEqual.into())
+                })?,
+            ))));
+        }
 
-	// AdditiveExpr			::= MultiplicativeExpr | Self '+' MultiplicativeExpr | Self '-' MultiplicativeExpr
-	fn parse_additive_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		let left_expr = self.parse_multiplicative_expression(step)?;
+        // Self '>' AdditiveExpr
+        if step.consume_if_next_token_is(Operator::GreaterThan)? {
+            let right_expr = self.parse_relational_expression(step)?;
 
-		// Self '+' MultiplicativeExpr
-		if step.consume_if_next_token_is(Operator::Plus)? {
-			let right_expr = self.parse_multiplicative_expression(step)?;
+            return Ok(Some(Box::new(GreaterThan::new(
+                left_expr.unwrap(),
+                right_expr.ok_or_else(|| {
+                    Error::ExpectedRightHandExpression(Operator::GreaterThan.into())
+                })?,
+            ))));
+        }
 
-			return Ok(Some(Box::new(Addition::new(
-				left_expr.unwrap(),
-				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Plus.into()))?
-			))));
-		}
+        // TODO
+        // Value      3 > 2  > 1   ||   3 > 2 = false (0) > 1 = false
+        // currently  3 > (2 > 1)
+        // should be (3 > 2) > 1
 
-		// Self '-' MultiplicativeExpr
-		if step.consume_if_next_token_is(Operator::Minus)? {
-			let right_expr = self.parse_multiplicative_expression(step)?;
+        // Self '>=' AdditiveExpr
+        if step.consume_if_next_token_is(Operator::GreaterThanOrEqual)? {
+            let right_expr = self.parse_relational_expression(step)?;
 
-			return Ok(Some(Box::new(Subtraction::new(
-				left_expr.unwrap(),
-				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Minus.into()))?
-			))));
-		}
+            return Ok(Some(Box::new(GreaterThanEqual::new(
+                left_expr.unwrap(),
+                right_expr.ok_or_else(|| {
+                    Error::ExpectedRightHandExpression(Operator::GreaterThanOrEqual.into())
+                })?,
+            ))));
+        }
 
-		Ok(left_expr)
-	}
+        Ok(left_expr)
+    }
 
-	// MultiplicativeExpr	::= UnaryExpr | Self MultiplyOperator UnaryExpr | Self 'div' UnaryExpr | Self 'mod' UnaryExpr
-	fn parse_multiplicative_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		let left_expr = self.parse_unary_expression(step)?;
+    // AdditiveExpr			::= MultiplicativeExpr | Self '+' MultiplicativeExpr | Self '-' MultiplicativeExpr
+    fn parse_additive_expression<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> ExpressionResult {
+        let left_expr = self.parse_multiplicative_expression(step)?;
 
-		// Self MultiplyOperator UnaryExpr
-		// Self 'div' UnaryExpr
-		// Self 'mod' UnaryExpr
+        // Self '+' MultiplicativeExpr
+        if step.consume_if_next_token_is(Operator::Plus)? {
+            let right_expr = self.parse_multiplicative_expression(step)?;
 
-		Ok(left_expr)
-	}
+            return Ok(Some(Box::new(Addition::new(
+                left_expr.unwrap(),
+                right_expr
+                    .ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Plus.into()))?,
+            ))));
+        }
 
-	// UnaryExpr			::= UnionExpr | '-' Self
-	fn parse_unary_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		if step.consume_if_next_token_is(Operator::Minus)? {
-			let right_expr = self.parse_union_expression(step)?;
+        // Self '-' MultiplicativeExpr
+        if step.consume_if_next_token_is(Operator::Minus)? {
+            let right_expr = self.parse_multiplicative_expression(step)?;
 
-			Ok(Some(Box::new(Subtraction::new(
-				Box::new(Literal::from(Value::Number(0.0))),
-				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Minus.into()))?
-			))))
-		} else {
-			self.parse_union_expression(step)
-		}
-	}
+            return Ok(Some(Box::new(Subtraction::new(
+                left_expr.unwrap(),
+                right_expr
+                    .ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Minus.into()))?,
+            ))));
+        }
 
-	// UnionExpr			::= PathExpr | Self '|' PathExpr
-	fn parse_union_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		let left_expr = self.parse_path_expression(step)?;
+        Ok(left_expr)
+    }
 
-		// Self '|' PathExpr
-		if step.consume_if_next_token_is(Operator::Pipe)? {
-			let right_expr = self.parse_path_expression(step)?;
+    // MultiplicativeExpr	::= UnaryExpr | Self MultiplyOperator UnaryExpr | Self 'div' UnaryExpr | Self 'mod' UnaryExpr
+    fn parse_multiplicative_expression<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> ExpressionResult {
+        let left_expr = self.parse_unary_expression(step)?;
 
-			return Ok(Some(Box::new(Union::new(
-				left_expr.unwrap(),
-				right_expr.ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Pipe.into()))?
-			))));
-		}
+        // Self MultiplyOperator UnaryExpr
+        // Self 'div' UnaryExpr
+        // Self 'mod' UnaryExpr
 
-		Ok(left_expr)
-	}
+        Ok(left_expr)
+    }
 
+    // UnaryExpr			::= UnionExpr | '-' Self
+    fn parse_unary_expression<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> ExpressionResult {
+        if step.consume_if_next_token_is(Operator::Minus)? {
+            let right_expr = self.parse_union_expression(step)?;
 
-	// Path
+            Ok(Some(Box::new(Subtraction::new(
+                Box::new(Literal::from(Value::Number(0.0))),
+                right_expr
+                    .ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Minus.into()))?,
+            ))))
+        } else {
+            self.parse_union_expression(step)
+        }
+    }
 
+    // UnionExpr			::= PathExpr | Self '|' PathExpr
+    fn parse_union_expression<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> ExpressionResult {
+        let left_expr = self.parse_path_expression(step)?;
 
-	// PathExpr 			::= LocationPath
-	// 							| FilterExpr
-	// 							| FilterExpr '/' RelativeLocationPath
-	// 							| FilterExpr '//' RelativeLocationPath
-	fn parse_path_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		let expr = self.parse_location_path_expression(step)?;
+        // Self '|' PathExpr
+        if step.consume_if_next_token_is(Operator::Pipe)? {
+            let right_expr = self.parse_path_expression(step)?;
 
-		if expr.is_some() {
+            return Ok(Some(Box::new(Union::new(
+                left_expr.unwrap(),
+                right_expr
+                    .ok_or_else(|| Error::ExpectedRightHandExpression(Operator::Pipe.into()))?,
+            ))));
+        }
+
+        Ok(left_expr)
+    }
+
+    // Path
+
+    // PathExpr 			::= LocationPath
+    // 							| FilterExpr
+    // 							| FilterExpr '/' RelativeLocationPath
+    // 							| FilterExpr '//' RelativeLocationPath
+    fn parse_path_expression<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> ExpressionResult {
+        let expr = self.parse_location_path_expression(step)?;
+
+        if expr.is_some() {
             return Ok(expr);
         } // TODO: investigate if this is a pattern
 
@@ -388,7 +451,7 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
                 if step.is_next_token(Operator::ForwardSlash) {
                     step.consume(Operator::ForwardSlash)?;
 
-					let expr = self.parse_location_path_raw(step, expr)?;
+                    let expr = self.parse_location_path_raw(step, expr)?;
 
                     Ok(Some(expr.expect("parse_path_expression")))
                 } else {
@@ -397,27 +460,36 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
             }
             None => Ok(None),
         }
-	}
+    }
 
-	// LocationPath			::= RelativeLocationPath | AbsoluteLocationPath
-	fn parse_location_path_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		let path = self.parse_relative_location_path(step)?;
+    // LocationPath			::= RelativeLocationPath | AbsoluteLocationPath
+    fn parse_location_path_expression<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> ExpressionResult {
+        let path = self.parse_relative_location_path(step)?;
 
-		if path.is_some() {
-			Ok(path)
-		} else {
-			self.parse_absolute_location_path(step)
-		}
-	}
+        if path.is_some() {
+            Ok(path)
+        } else {
+            self.parse_absolute_location_path(step)
+        }
+    }
 
-	// RelativeLocationPath	::= Step | RelativeLocationPath '/' Step | AbbreviatedRelativeLocationPath
-	fn parse_relative_location_path<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		self.parse_location_path_raw(step, Box::new(ContextNode))
-	}
+    // RelativeLocationPath	::= Step | RelativeLocationPath '/' Step | AbbreviatedRelativeLocationPath
+    fn parse_relative_location_path<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> ExpressionResult {
+        self.parse_location_path_raw(step, Box::new(ContextNode))
+    }
 
-	// AbsoluteLocationPath	::= '/' RelativeLocationPath? | AbbreviatedAbsoluteLocationPath
-	fn parse_absolute_location_path<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		if step.is_next_token(Operator::ForwardSlash) {
+    // AbsoluteLocationPath	::= '/' RelativeLocationPath? | AbbreviatedAbsoluteLocationPath
+    fn parse_absolute_location_path<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> ExpressionResult {
+        if step.is_next_token(Operator::ForwardSlash) {
             step.consume(Operator::ForwardSlash)?;
 
             match self.parse_location_path_raw(step, Box::new(RootNode))? {
@@ -425,58 +497,66 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
                 None => Ok(Some(Box::new(RootNode))),
             }
         } else {
-			Ok(None)
+            Ok(None)
         }
-	}
+    }
 
-	// AbbreviatedRelativeLocationPath ::= RelativeLocationPath '//' Step
-	// fn parse_abbreviated_relative_location_path<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-	// 	// self.parse_relative_location_path(step)
-	// 	Ok(None)
-	// }
+    // AbbreviatedRelativeLocationPath ::= RelativeLocationPath '//' Step
+    // fn parse_abbreviated_relative_location_path<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
+    // 	// self.parse_relative_location_path(step)
+    // 	Ok(None)
+    // }
 
-	fn parse_location_path_raw<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>, start_point: ExpressionArg) -> ExpressionResult {
-		match self.parse_step(step)? {
+    fn parse_location_path_raw<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+        start_point: ExpressionArg,
+    ) -> ExpressionResult {
+        match self.parse_step(step)? {
             Some(expr_step) => {
                 let mut steps = vec![expr_step];
 
                 while step.is_next_token(Operator::ForwardSlash) {
-					step.consume(Operator::ForwardSlash)?;
+                    step.consume(Operator::ForwardSlash)?;
 
-					if step.is_next_token(Operator::Star) {
-						step.consume(Operator::Star)?;
+                    if step.is_next_token(Operator::Star) {
+                        step.consume(Operator::Star)?;
 
-						steps.push(Step::new(
-							AxisName::Child,
-							Box::new(nodetest::Element::new(nodetest::NameTest { prefix: None, local_part: "*".into() })),
-							Vec::new()
-						));
-					} else {
-						let next = self.parse_step(step)?;
-						steps.push(next.ok_or(Error::TrailingSlash)?);
-					}
+                        steps.push(Step::new(
+                            AxisName::Child,
+                            Box::new(nodetest::Element::new(nodetest::NameTest {
+                                prefix: None,
+                                local_part: "*".into(),
+                            })),
+                            Vec::new(),
+                        ));
+                    } else {
+                        let next = self.parse_step(step)?;
+                        steps.push(next.ok_or(Error::TrailingSlash)?);
+                    }
                 }
 
                 Ok(Some(Box::new(Path::new(start_point, steps))))
             }
             None => Ok(None),
         }
-	}
+    }
 
+    // A node test * is true for any node of the principal node type.
+    // child::* will select all element children of the context node,
+    // attribute::* will select all attributes of the context node.
 
-	// A node test * is true for any node of the principal node type.
-	// child::* will select all element children of the context node,
-	// attribute::* will select all attributes of the context node.
-
-	// Step					::= AxisSpecifier NodeTest Predicate* | AbbreviatedStep
-	fn parse_step<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> Result<Option<Step>> {
-		let axis = self.parse_axis_specifier(step)?;
-
+    // Step					::= AxisSpecifier NodeTest Predicate* | AbbreviatedStep
+    fn parse_step<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> Result<Option<Step>> {
+        let axis = self.parse_axis_specifier(step)?;
 
         let node_test = match self.parse_node_test(step)? {
             Some(test) => Some(test),
             None => self.default_node_test(step, axis)?,
-		};
+        };
 
         let node_test = match node_test {
             Some(test) => test,
@@ -485,140 +565,160 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 
         let predicates = self.parse_predicate_expressions(step)?;
 
-		Ok(Some(Step::new(axis, node_test, predicates)))
-	}
+        Ok(Some(Step::new(axis, node_test, predicates)))
+    }
 
-	// AxisSpecifier			::= AxisName '::' | AbbreviatedAxisSpecifier
-	fn parse_axis_specifier<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> Result<AxisName> {
-		if step.is_next_token_func(|t| t.is_axis()) {
+    // AxisSpecifier			::= AxisName '::' | AbbreviatedAxisSpecifier
+    fn parse_axis_specifier<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> Result<AxisName> {
+        if step.is_next_token_func(|t| t.is_axis()) {
             Ok(return_value!(step, ExprToken::Axis))
         } else {
             Ok(AxisName::Child)
         }
-	}
+    }
 
+    // Filter
 
-	// Filter
+    // FilterExpr			::= PrimaryExpr | Self Predicate
+    fn parse_filter_expression<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> ExpressionResult {
+        if let Some(expr) = self.parse_primary_expression(step)? {
+            // let predicates = self.parse_predicates(step)?;
 
-	// FilterExpr			::= PrimaryExpr | Self Predicate
-	fn parse_filter_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		if let Some(expr) = self.parse_primary_expression(step)? {
-	        // let predicates = self.parse_predicates(step)?;
+            // Ok(Some(predicates.into_iter().fold(expr, |expr, pred| {
+            //     Filter::new(expr, pred)
+            // })))
 
-	        // Ok(Some(predicates.into_iter().fold(expr, |expr, pred| {
-	        //     Filter::new(expr, pred)
-			// })))
+            Ok(Some(expr))
+        } else {
+            Ok(None)
+        }
+    }
 
-			Ok(Some(expr))
-		} else {
-			Ok(None)
-		}
-	}
-
-	// PrimaryExpr			::= VariableReference
-	// 							| '(' Expr ')'
-	// 							| Literal
-	// 							| Number
-	// 							| FunctionCall
-	fn parse_primary_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
+    // PrimaryExpr			::= VariableReference
+    // 							| '(' Expr ')'
+    // 							| Literal
+    // 							| Number
+    // 							| FunctionCall
+    fn parse_primary_expression<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> ExpressionResult {
         // self.parse_variable_reference(step)
         // self.parse_nested_expression(step)
-		// self.parse_string_literal(step)
-		if step.is_next_token_func(|i| i.is_literal()) {
-			let value = return_value!(step, ExprToken::Literal);
-			return Ok(Some(Box::new(Literal::from(Value::String(value)))));
-		}
+        // self.parse_string_literal(step)
+        if step.is_next_token_func(|i| i.is_literal()) {
+            let value = return_value!(step, ExprToken::Literal);
+            return Ok(Some(Box::new(Literal::from(Value::String(value)))));
+        }
 
-		// self.parse_numeric_literal(step)
-		if step.is_next_token_func(|i| i.is_number()) {
-			let value = return_value!(step, ExprToken::Number);
-			return Ok(Some(Box::new(Literal::from(Value::Number(value)))));
-		}
+        // self.parse_numeric_literal(step)
+        if step.is_next_token_func(|i| i.is_number()) {
+            let value = return_value!(step, ExprToken::Number);
+            return Ok(Some(Box::new(Literal::from(Value::Number(value)))));
+        }
 
+        if let Some(func) = self.parse_function_call(step)? {
+            return Ok(Some(Box::new(func)));
+        }
 
-		if let Some(func) = self.parse_function_call(step)? {
-			return Ok(Some(Box::new(func)));
-		}
+        Ok(None)
+    }
 
-		Ok(None)
-	}
+    // Function Calls
+    fn parse_function_call<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> Result<Option<Function>> {
+        if step.is_next_token_func(|i| i.is_function_name()) {
+            let fn_name = return_value!(step, ExprToken::FunctionName);
+            step.consume(ExprToken::LeftParen)?;
 
-	// Function Calls
-	fn parse_function_call<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> Result<Option<Function>> {
-		if step.is_next_token_func(|i| i.is_function_name()) {
-			let fn_name = return_value!(step, ExprToken::FunctionName);
-			step.consume(ExprToken::LeftParen)?;
+            // Function
 
-			// Function
+            let function: Box<dyn functions::Function> = match fn_name.as_str() {
+                "last" => Box::new(functions::Last),
+                "position" => Box::new(functions::Position),
+                "count" => Box::new(functions::Count),
+                "local-name" => Box::new(functions::LocalName),
+                "namespace-uri" => Box::new(functions::NamespaceUri),
+                "name" => Box::new(functions::Name),
+                "string" => Box::new(functions::ToString),
+                "concat" => Box::new(functions::Concat),
+                "starts-with" => Box::new(functions::StartsWith),
+                "contains" => Box::new(functions::Contains),
+                "substring-before" => Box::new(functions::SubstringBefore),
+                "substring-after" => Box::new(functions::SubstringAfter),
+                "substring" => Box::new(functions::Substring),
+                "string-length" => Box::new(functions::StringLength),
+                "normalize-space" => Box::new(functions::NormalizeSpace),
+                "not" => Box::new(functions::Not),
+                "true" => Box::new(functions::True),
+                "false" => Box::new(functions::False),
+                "sum" => Box::new(functions::Sum),
+                "floor" => Box::new(functions::Floor),
+                "ceiling" => Box::new(functions::Ceiling),
+                "round" => Box::new(functions::Round),
 
-			let function: Box<dyn functions::Function> = match fn_name.as_str() {
-				"last" => Box::new(functions::Last),
-				"position" => Box::new(functions::Position),
-				"count" => Box::new(functions::Count),
-				"local-name" => Box::new(functions::LocalName),
-				"namespace-uri" => Box::new(functions::NamespaceUri),
-				"name" => Box::new(functions::Name),
-				"string" => Box::new(functions::ToString),
-				"concat" => Box::new(functions::Concat),
-				"starts-with" => Box::new(functions::StartsWith),
-				"contains" => Box::new(functions::Contains),
-				"substring-before" => Box::new(functions::SubstringBefore),
-				"substring-after" => Box::new(functions::SubstringAfter),
-				"substring" => Box::new(functions::Substring),
-				"string-length" => Box::new(functions::StringLength),
-				"normalize-space" => Box::new(functions::NormalizeSpace),
-				"not" => Box::new(functions::Not),
-				"true" => Box::new(functions::True),
-				"false" => Box::new(functions::False),
-				"sum" => Box::new(functions::Sum),
-				"floor" => Box::new(functions::Floor),
-				"ceiling" => Box::new(functions::Ceiling),
-				"round" => Box::new(functions::Round),
+                _ => return Ok(None),
+            };
 
-				_ => return Ok(None)
-			};
+            let mut args = Vec::new();
 
-			let mut args = Vec::new();
+            while !step.consume_if_next_token_is(ExprToken::RightParen)? {
+                if let Some(expr) = self.parse_expression(step)? {
+                    args.push(expr);
+                }
 
-			while !step.consume_if_next_token_is(ExprToken::RightParen)? {
-				if let Some(expr) = self.parse_expression(step)? {
-					args.push(expr);
-				}
+                step.consume_if_next_token_is(ExprToken::Comma)?;
+            }
 
-				step.consume_if_next_token_is(ExprToken::Comma)?;
-			}
+            Ok(Some(Function::new(function, args)))
+        } else {
+            Ok(None)
+        }
+    }
 
-			Ok(Some(Function::new(function, args)))
-		} else {
-			Ok(None)
-		}
-	}
+    // Node Test
 
-	// Node Test
+    fn parse_node_test<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> Result<Option<Box<dyn NodeTest>>> {
+        if step.is_next_token_func(|t| t.is_node_type()) {
+            let name = return_value!(step, ExprToken::NodeType);
 
-	fn parse_node_test<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> Result<Option<Box<dyn NodeTest>>> {
-		if step.is_next_token_func(|t| t.is_node_type()) {
-			let name = return_value!(step, ExprToken::NodeType);
+            match name {
+                NodeType::Node => Ok(Some(Box::new(nodetest::Node))),
+                NodeType::Text => Ok(Some(Box::new(nodetest::Text))),
+                NodeType::Comment => Ok(Some(Box::new(nodetest::Comment))),
+                NodeType::ProcessingInstruction(target) => {
+                    Ok(Some(Box::new(nodetest::ProcessingInstruction::new(target))))
+                }
+            }
+        } else if step.is_next_token(Operator::Star) {
+            step.consume(Operator::Star)?;
 
-			match name {
-				NodeType::Node => Ok(Some(Box::new(nodetest::Node))),
-				NodeType::Text => Ok(Some(Box::new(nodetest::Text))),
-				NodeType::Comment => Ok(Some(Box::new(nodetest::Comment))),
-				NodeType::ProcessingInstruction(target) => Ok(Some(Box::new(
-					nodetest::ProcessingInstruction::new(target),
-				))),
-			}
-		} else if step.is_next_token(Operator::Star) {
-			step.consume(Operator::Star)?;
+            Ok(Some(Box::new(nodetest::Element::new(nodetest::NameTest {
+                prefix: None,
+                local_part: "*".into(),
+            }))))
+        } else {
+            Ok(None)
+        }
+    }
 
-			Ok(Some(Box::new(nodetest::Element::new(nodetest::NameTest { prefix: None, local_part: "*".into() }))))
-		} else {
-			Ok(None)
-		}
-	}
-
-	fn default_node_test<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>, axis: AxisName) -> Result<Option<Box<dyn NodeTest>>> {
-		if step.is_next_token_func(|t| t.is_name_test()) {
+    fn default_node_test<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+        axis: AxisName,
+    ) -> Result<Option<Box<dyn NodeTest>>> {
+        if step.is_next_token_func(|t| t.is_name_test()) {
             let name = return_value!(step, ExprToken::NameTest);
 
             let test: Box<dyn NodeTest> = match axis.principal_node_type() {
@@ -631,41 +731,44 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
         } else {
             Ok(None)
         }
-	}
+    }
 
+    // Predicate
 
-	// Predicate
+    // Predicate			::= '[' PredicateExpr ']'
+    // PredicateExpr		::= Expr
+    fn parse_predicate_expressions<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> Result<Vec<ExpressionArg>> {
+        let mut expr = Vec::new();
 
-	// Predicate			::= '[' PredicateExpr ']'
-	// PredicateExpr		::= Expr
-	fn parse_predicate_expressions<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> Result<Vec<ExpressionArg>> {
-		let mut expr = Vec::new();
+        while let Some(pred) = self.parse_predicate_expression(step)? {
+            expr.push(pred);
+        }
 
-		while let Some(pred) = self.parse_predicate_expression(step)? {
-			expr.push(pred);
-		}
+        Ok(expr)
+    }
 
-		Ok(expr)
-	}
+    fn parse_predicate_expression<S: Iterator<Item = ExprToken>>(
+        &self,
+        step: &mut Stepper<S>,
+    ) -> ExpressionResult {
+        if step.is_next_token(ExprToken::LeftBracket) {
+            step.consume(ExprToken::LeftBracket)?;
 
+            let val = self.parse_expression(step)?;
 
-	fn parse_predicate_expression<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		if step.is_next_token(ExprToken::LeftBracket) {
-			step.consume(ExprToken::LeftBracket)?;
+            step.consume(ExprToken::RightBracket)?;
 
-			let val = self.parse_expression(step)?;
-
-			step.consume(ExprToken::RightBracket)?;
-
-			Ok(val)
-		} else {
-			Ok(None)
-		}
-	}
+            Ok(val)
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 // Expr							::= OrExpr
-
 
 // let tokenizer = parser::Tokenizer::new(query);
 // let found = tokenizer.collect::<Vec<parser::TokenResult>>();
@@ -681,67 +784,70 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 pub struct Stepper<S: Iterator<Item = ExprToken>>(Peekable<S>);
 
 impl<S: Iterator<Item = ExprToken>> Stepper<S> {
-	pub fn new(steps: Peekable<S>) -> Self {
-		Stepper(steps)
-	}
+    pub fn new(steps: Peekable<S>) -> Self {
+        Stepper(steps)
+    }
 
-	pub fn has_more_tokens(&mut self) -> bool {
-		self.peek().is_some()
-	}
+    pub fn has_more_tokens(&mut self) -> bool {
+        self.peek().is_some()
+    }
 
-	pub fn is_next_token<T: Into<ExprToken>>(&mut self, token: T) -> bool {
-		match self.peek() {
-			Some(t) => t == &token.into(),
-			None => false
-		}
-	}
+    pub fn is_next_token<T: Into<ExprToken>>(&mut self, token: T) -> bool {
+        match self.peek() {
+            Some(t) => t == &token.into(),
+            None => false,
+        }
+    }
 
-	pub fn is_next_token_func<F: FnOnce(&S::Item) -> bool>(&mut self, token: F) -> bool {
-		match self.peek() {
-			Some(t) => token(t),
-			None => false
-		}
-	}
+    pub fn is_next_token_func<F: FnOnce(&S::Item) -> bool>(&mut self, token: F) -> bool {
+        match self.peek() {
+            Some(t) => token(t),
+            None => false,
+        }
+    }
 
-	pub fn consume_if_next_token_is<T: Into<ExprToken> + Clone>(&mut self, token: T) -> Result<bool> {
-		if self.is_next_token(token.clone()) {
-			self.consume(token)?;
+    pub fn consume_if_next_token_is<T: Into<ExprToken> + Clone>(
+        &mut self,
+        token: T,
+    ) -> Result<bool> {
+        if self.is_next_token(token.clone()) {
+            self.consume(token)?;
 
-			Ok(true)
-		} else {
-			Ok(false)
-		}
-	}
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
 
-	pub fn consume<T: Into<ExprToken>>(&mut self, token: T) -> Result<()> {
-		let step = self.next().ok_or(Error::InputEmpty)?;
+    pub fn consume<T: Into<ExprToken>>(&mut self, token: T) -> Result<()> {
+        let step = self.next().ok_or(Error::InputEmpty)?;
 
-		if step == token.into() {
-			Ok(())
-		} else {
-			Err(Error::UnexpectedToken(step))
-		}
-	}
+        if step == token.into() {
+            Ok(())
+        } else {
+            Err(Error::UnexpectedToken(step))
+        }
+    }
 
-	pub fn consume_func<F: FnOnce(&S::Item) -> bool>(&mut self, token: F) -> Result<()> {
-		let step = self.next().ok_or(Error::InputEmpty)?;
+    pub fn consume_func<F: FnOnce(&S::Item) -> bool>(&mut self, token: F) -> Result<()> {
+        let step = self.next().ok_or(Error::InputEmpty)?;
 
-		if token(&step) {
-			Ok(())
-		} else {
-			Err(Error::UnexpectedToken(step))
-		}
-	}
+        if token(&step) {
+            Ok(())
+        } else {
+            Err(Error::UnexpectedToken(step))
+        }
+    }
 
-	pub fn peek(&mut self) -> Option<&S::Item> {
-		self.0.peek()
-	}
+    pub fn peek(&mut self) -> Option<&S::Item> {
+        self.0.peek()
+    }
 }
 
 impl<S: Iterator<Item = ExprToken>> Iterator for Stepper<S> {
-	type Item = S::Item;
+    type Item = S::Item;
 
-	fn next(&mut self) -> Option<Self::Item> {
-		self.0.next()
-	}
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
 }

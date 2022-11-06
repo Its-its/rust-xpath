@@ -1,12 +1,11 @@
 use std::io::Cursor;
 
 use html5ever::tendril::TendrilSink;
-use tracing::{Level, debug};
 use tracing::subscriber::set_global_default;
+use tracing::{debug, Level};
 use tracing_subscriber::FmtSubscriber;
-use xpather::result::Result;
 use xpather::factory::Document;
-
+use xpather::result::Result;
 
 const WEBPAGE: &str = r#"
 	<!DOCTYPE html>
@@ -38,7 +37,7 @@ const WEBPAGE: &str = r#"
 	</html>"#;
 
 pub fn main() -> Result<()> {
-	let subscriber = FmtSubscriber::builder()
+    let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::TRACE)
         .with_file(false)
         .with_line_number(true)
@@ -46,40 +45,38 @@ pub fn main() -> Result<()> {
 
     set_global_default(subscriber).expect("setting default subscriber failed");
 
-	let document = parse_doc(&mut Cursor::new(WEBPAGE));
+    let document = parse_doc(&mut Cursor::new(WEBPAGE));
 
-	let mut eval = document.evaluate(
-		r#"//a[starts-with(@class, "click")]/@class"#
-	)?;
+    let mut eval = document.evaluate(r#"//a[starts-with(@class, "click")]/@class"#)?;
 
-	debug!("{:?}", eval.next());
+    debug!("{:?}", eval.next());
 
-	// let factory = Factory::new(r#"2 + A"#, &doc, &doc.root);
+    // let factory = Factory::new(r#"2 + A"#, &doc, &doc.root);
 
-	// let now = Instant::now();
+    // let now = Instant::now();
 
-	// let mut prod = factory.produce()?;
+    // let mut prod = factory.produce()?;
 
-	// debug!("{:?}", now.elapsed());
+    // debug!("{:?}", now.elapsed());
 
-	// let now = Instant::now();
+    // let now = Instant::now();
 
-	// debug!("Output");
+    // debug!("Output");
 
-	// // debug!("{:#?}", prod.collect_nodes());
-	// debug!("{:#?}", prod.next());
+    // // debug!("{:#?}", prod.collect_nodes());
+    // debug!("{:#?}", prod.next());
 
-	// debug!("{:?}", now.elapsed());
+    // debug!("{:?}", now.elapsed());
 
-	Ok(())
+    Ok(())
 }
 
-
 pub fn parse_doc<R: std::io::Read>(data: &mut R) -> Document {
-	let parse: markup5ever_rcdom::RcDom = html5ever::parse_document(markup5ever_rcdom::RcDom::default(), Default::default())
-		.from_utf8()
-		.read_from(data)
-		.expect("html5ever");
+    let parse: markup5ever_rcdom::RcDom =
+        html5ever::parse_document(markup5ever_rcdom::RcDom::default(), Default::default())
+            .from_utf8()
+            .read_from(data)
+            .expect("html5ever");
 
-	Document::new(parse.document.into())
+    Document::new(parse.document.into())
 }
