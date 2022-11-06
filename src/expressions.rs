@@ -375,6 +375,7 @@ pub struct Path {
 
 	// TODO: We just cache everything it validated. Later we'll make it more ergonomic.
 	found_cache: Option<Vec<Node>>,
+	cached_from: Option<Node>,
 }
 
 impl Path {
@@ -382,15 +383,22 @@ impl Path {
 		Self {
 			start_pos,
 			steps,
-			found_cache: None
+			found_cache: None,
+			cached_from: None,
 		}
 	}
 }
 
 impl Expression for Path {
 	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
+		if self.cached_from.as_ref() != Some(eval.node) {
+			self.found_cache = None;
+		}
+
 		if self.found_cache.is_none() {
-			println!("==========================================================");
+			self.cached_from = Some(eval.node.clone());
+
+			if DEBUG { println!("=========================================================="); }
 
 			let Some(result) = self.start_pos.next_eval(eval)? else {
 				return Ok(None);
@@ -492,14 +500,13 @@ impl Predicate {
 	) -> Result<Nodeset> {
 		let node_count = nodes.len();
 
-		let found = nodes
-			.into_iter()
-			.enumerate()
-			.filter_map(|(index, node)| {
-				let mut ctx = context.new_evaluation_from(&node);
-				// TODO: Better Manage.
-				ctx.position = index + 1;
-				ctx.size = node_count;
+		let mut found = Vec::new();
+
+		for (index, node) in nodes.into_iter().enumerate() {
+			let mut ctx = context.new_evaluation_from(&node);
+			// TODO: Manage Better.
+			ctx.position = index + 1;
+			ctx.size = node_count;
 
 				match self.matches_eval(&ctx) {
 					Ok(Some(true)) => Some(Ok(node)),
@@ -508,6 +515,10 @@ impl Predicate {
 				}
 			})
 			.collect::<Result<Vec<Node>>>()?;
+			if let Some(true) = self.matches_eval(&ctx)? {
+				found.push(node)
+			}
+		}
 
 		Ok(found.into())
 	}
