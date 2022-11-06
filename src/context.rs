@@ -28,7 +28,7 @@ impl<'a> Evaluation<'a> {
 		&self.document.root
 	}
 
-	pub fn find_nodes(&self, context: &AxisName, node_test: &dyn NodeTest) -> Nodeset {
+	pub fn find_nodes(&self, context: &AxisName, node_test: &dyn NodeTest, prev_step_axis: Option<AxisName>) -> Nodeset {
 		let mut nodeset = Nodeset::new();
 
 		match context {
@@ -36,13 +36,13 @@ impl<'a> Evaluation<'a> {
 				if let Some(parent) = self.node.parent() {
 					let eval = self.new_evaluation_from(&parent);
 					node_test.test(&eval, &mut nodeset);
-					eval.find_nodes(&AxisName::Ancestor, node_test);
+					eval.find_nodes(&AxisName::Ancestor, node_test, prev_step_axis);
 				}
 			}
 
 			AxisName::AncestorOrSelf => {
-				nodeset.extend(self.find_nodes(&AxisName::SelfAxis, node_test));
-				nodeset.extend(self.find_nodes(&AxisName::Ancestor, node_test));
+				nodeset.extend(self.find_nodes(&AxisName::SelfAxis, node_test, prev_step_axis));
+				nodeset.extend(self.find_nodes(&AxisName::Ancestor, node_test, prev_step_axis));
 			}
 
 			AxisName::Attribute => {
@@ -61,9 +61,16 @@ impl<'a> Evaluation<'a> {
 			}
 
 			AxisName::Child => {
-				for child in self.node.children() {
-					let new_context = self.new_evaluation_from(&child);
+				// If our previous step was DescendantOrSelf that means we're going through all its' children
+				// so we'll just check out the current node to ensure it doesn't return nodes out of order.
+				if prev_step_axis == Some(AxisName::DescendantOrSelf) {
+					let new_context = self.new_evaluation_from(self.node);
 					node_test.test(&new_context, &mut nodeset);
+				} else {
+					for child in self.node.children() {
+						let new_context = self.new_evaluation_from(&child);
+						node_test.test(&new_context, &mut nodeset);
+					}
 				}
 			}
 
@@ -73,13 +80,13 @@ impl<'a> Evaluation<'a> {
 
 					node_test.test(&new_context, &mut nodeset);
 
-					nodeset.extend(new_context.find_nodes(&AxisName::Descendant, node_test));
+					nodeset.extend(new_context.find_nodes(&AxisName::Descendant, node_test, prev_step_axis));
 				}
 			}
 
 			AxisName::DescendantOrSelf => {
-				nodeset.extend(self.find_nodes(&AxisName::SelfAxis, node_test));
-				nodeset.extend(self.find_nodes(&AxisName::Descendant, node_test));
+				nodeset.extend(self.find_nodes(&AxisName::SelfAxis, node_test, prev_step_axis));
+				nodeset.extend(self.find_nodes(&AxisName::Descendant, node_test, prev_step_axis));
 			}
 
 			// excluding any descendants and excluding attribute nodes and namespace nodes
@@ -89,14 +96,14 @@ impl<'a> Evaluation<'a> {
 				.into_iter()
 				.for_each(|node| nodeset.extend(
 					self.new_evaluation_from(&node)
-					.find_nodes(&AxisName::DescendantOrSelf, node_test)
+					.find_nodes(&AxisName::DescendantOrSelf, node_test, prev_step_axis)
 				));
 
 				// Get the parents children after 'self.node.parent()'
 				if let Some(parent) = self.node.parent() {
 					nodeset.extend(
 						self.new_evaluation_from(&parent)
-						.find_nodes(&AxisName::Following, node_test)
+						.find_nodes(&AxisName::Following, node_test, prev_step_axis)
 					);
 				}
 			}
@@ -131,14 +138,14 @@ impl<'a> Evaluation<'a> {
 				.into_iter()
 				.for_each(|node| nodeset.extend(
 					self.new_evaluation_from(&node)
-					.find_nodes(&AxisName::DescendantOrSelf, node_test)
+					.find_nodes(&AxisName::DescendantOrSelf, node_test, prev_step_axis)
 				));
 
 				// Get the parents children before 'self.node.parent()'
 				if let Some(parent) = self.node.parent() {
 					nodeset.extend(
 						self.new_evaluation_from(&parent)
-						.find_nodes(&AxisName::Preceding, node_test)
+						.find_nodes(&AxisName::Preceding, node_test, prev_step_axis)
 					);
 				}
 			}

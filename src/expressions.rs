@@ -391,6 +391,8 @@ impl Path {
 
 impl Expression for Path {
 	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
+		// TODO: Better way to handle this.
+		// Needed for Predicate Function Path. They're re-used for each node check.
 		if self.cached_from.as_ref() != Some(eval.node) {
 			self.found_cache = None;
 		}
@@ -398,7 +400,7 @@ impl Expression for Path {
 		if self.found_cache.is_none() {
 			self.cached_from = Some(eval.node.clone());
 
-			if DEBUG { println!("=========================================================="); }
+			if DEBUG { println!("VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV"); }
 
 			let Some(result) = self.start_pos.next_eval(eval)? else {
 				return Ok(None);
@@ -410,15 +412,22 @@ impl Expression for Path {
 
 			let mut nodes = Nodeset { nodes: vec![node] };
 
+			let mut prev_step_axis = None;
 			for (i, step) in self.steps.iter_mut().enumerate() {
-				nodes = step.evaluate(eval, nodes)?;
-				if DEBUG { println!("Step [{i}] {nodes:?}"); }
+				nodes = step.evaluate(eval, nodes, prev_step_axis)?;
+				prev_step_axis = Some(step.axis);
+
+				if DEBUG {
+					println!("Step [{i}]");
+					nodes.nodes.iter()
+					.for_each(|node| println!("    {}", crate::compile_lines(node)));
+				}
 			}
 
 			if DEBUG {
 				println!("<- {nodes:?}");
 
-				println!("==========================================================");
+				println!("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
 			}
 
 			// Reverse it so we can use .pop later.
@@ -464,12 +473,13 @@ impl Step {
 		&mut self,
 		context: &Evaluation,
 		starting_nodes: Nodeset,
+		prev_step_axis: Option<AxisName>,
 	) -> Result<Nodeset> {
 		let mut unique = Nodeset::new();
 
 		for node in starting_nodes {
 			let child_context = context.new_evaluation_from(&node);
-			let mut nodes = child_context.find_nodes(&self.axis, self.node_test.as_ref());
+			let mut nodes = child_context.find_nodes(&self.axis, self.node_test.as_ref(), prev_step_axis);
 
 			for predicate in &mut self.predicates {
 				nodes = predicate.select(context, nodes)?;
@@ -508,13 +518,10 @@ impl Predicate {
 			ctx.position = index + 1;
 			ctx.size = node_count;
 
-				match self.matches_eval(&ctx) {
-					Ok(Some(true)) => Some(Ok(node)),
-					Ok(None) | Ok(Some(false)) => None,
-					Err(e) => Some(Err(e)),
-				}
-			})
-			.collect::<Result<Vec<Node>>>()?;
+			if DEBUG {
+				println!("Pred [{index}] {}", crate::compile_lines(&node));
+			}
+
 			if let Some(true) = self.matches_eval(&ctx)? {
 				found.push(node)
 			}
