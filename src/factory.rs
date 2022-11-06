@@ -428,11 +428,10 @@ impl<'eval, 'b: 'eval> Factory<'eval> {
 	}
 
 	// AbbreviatedRelativeLocationPath ::= RelativeLocationPath '//' Step
-	fn parse_abbreviated_relative_location_path<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
-		// self.parse_relative_location_path(step)
-
-		Ok(None)
-	}
+	// fn parse_abbreviated_relative_location_path<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>) -> ExpressionResult {
+	// 	// self.parse_relative_location_path(step)
+	// 	Ok(None)
+	// }
 
 	fn parse_location_path_raw<S: Iterator<Item = ExprToken>>(&self, step: &mut Stepper<S>, start_point: ExpressionArg) -> ExpressionResult {
 		match self.parse_step(step)? {

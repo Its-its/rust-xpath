@@ -51,11 +51,11 @@ macro_rules! res_opt_def_false {
 }
 
 pub trait Expression: fmt::Debug {
-	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>>;
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>>;
 
 	// Helper Functions
 
-	fn collect(&self, eval: &Evaluation) -> Result<Vec<Value>> {
+	fn collect(&mut self, eval: &Evaluation) -> Result<Vec<Value>> {
 		let mut nodes = Vec::new();
 
 		while let Some(node) = self.next_eval(eval)? {
@@ -81,7 +81,7 @@ impl Addition {
 }
 
 impl Expression for Addition {
-	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		let left_value = res_opt_def_NAN!(self.left.next_eval(eval));
 		let right_value = res_opt_def_NAN!(self.right.next_eval(eval));
 
@@ -103,7 +103,7 @@ impl Subtraction {
 }
 
 impl Expression for Subtraction {
-	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		let left_value = res_opt_def_NAN!(self.left.next_eval(eval));
 		let right_value = res_opt_def_NAN!(self.right.next_eval(eval));
 
@@ -125,7 +125,7 @@ impl LessThan {
 }
 
 impl Expression for LessThan {
-	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		let left_value = res_opt_def_false!(self.left.next_eval(eval));
 		let right_value = res_opt_def_false!(self.right.next_eval(eval));
 
@@ -147,7 +147,7 @@ impl LessThanEqual {
 }
 
 impl Expression for LessThanEqual {
-	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		let left_value = res_opt_def_false!(self.left.next_eval(eval));
 		let right_value = res_opt_def_false!(self.right.next_eval(eval));
 
@@ -169,7 +169,7 @@ impl GreaterThan {
 }
 
 impl Expression for GreaterThan {
-	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		let left_value = res_opt_def_false!(self.left.next_eval(eval));
 		let right_value = res_opt_def_false!(self.right.next_eval(eval));
 
@@ -191,7 +191,7 @@ impl GreaterThanEqual {
 }
 
 impl Expression for GreaterThanEqual {
-	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		let left_value = res_opt_def_false!(self.left.next_eval(eval));
 		let right_value = res_opt_def_false!(self.right.next_eval(eval));
 
@@ -217,7 +217,7 @@ impl Equal {
 }
 
 impl Expression for Equal {
-	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		let left_value = res_opt_def_false!(self.left.next_eval(eval));
 		let right_value = res_opt_def_false!(self.right.next_eval(eval));
 
@@ -239,7 +239,7 @@ impl NotEqual {
 }
 
 impl Expression for NotEqual {
-	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		let left_value = res_opt_def_false!(self.left.next_eval(eval));
 		let right_value = res_opt_def_false!(self.right.next_eval(eval));
 
@@ -261,7 +261,7 @@ impl And {
 }
 
 impl Expression for And {
-	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		let left_value = res_opt_def_false!(self.left.next_eval(eval));
 		let right_value = res_opt_def_false!(self.right.next_eval(eval));
 
@@ -284,7 +284,7 @@ impl Or {
 }
 
 impl Expression for Or {
-	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		let left_value = res_opt_def_false!(self.left.next_eval(eval));
 		let right_value = res_opt_def_false!(self.right.next_eval(eval));
 
@@ -307,7 +307,7 @@ impl Union {
 }
 
 impl Expression for Union {
-	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		if !*self.skip_left.lock().unwrap() {
 			*self.skip_left.lock().unwrap() = true;
 
@@ -340,7 +340,7 @@ impl From<Value> for Literal {
 }
 
 impl Expression for Literal {
-	fn next_eval(&self, _: &Evaluation) -> Result<Option<Value>> {
+	fn next_eval(&mut self, _: &Evaluation) -> Result<Option<Value>> {
 		Ok(Some(self.0.clone()))
 	}
 }
@@ -352,7 +352,7 @@ impl Expression for Literal {
 pub struct RootNode;
 
 impl Expression for RootNode {
-	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		Ok(Some(Value::Node(eval.root().clone())))
 	}
 }
@@ -362,7 +362,7 @@ impl Expression for RootNode {
 pub struct ContextNode;
 
 impl Expression for ContextNode {
-	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
 		Ok(Some(Value::Node(eval.node.clone())))
 	}
 }
@@ -371,37 +371,57 @@ impl Expression for ContextNode {
 #[derive(Debug)]
 pub struct Path {
 	pub start_pos: ExpressionArg,
-	pub steps: Vec<Step>
+	pub steps: Vec<Step>,
+
+	// TODO: We just cache everything it validated. Later we'll make it more ergonomic.
+	found_cache: Option<Vec<Node>>,
 }
 
 impl Path {
 	pub fn new(start_pos: ExpressionArg, steps: Vec<Step>) -> Self {
 		Self {
 			start_pos,
-			steps
+			steps,
+			found_cache: None
 		}
 	}
 }
 
 impl Expression for Path {
-	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
-		let Some(result) = self.start_pos.next_eval(eval)? else {
-			return Ok(None);
-		};
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
+		if self.found_cache.is_none() {
+			println!("==========================================================");
 
-		let mut node = Nodeset { nodes: vec![result.into_node()?] };
+			let Some(result) = self.start_pos.next_eval(eval)? else {
+				return Ok(None);
+			};
 
-		for step in &self.steps {
-			node = step.evaluate(eval, node)?;
+			let node = result.into_node()?;
+
+			if DEBUG { println!("-> {}", crate::compile_lines(&node)); }
+
+			let mut nodes = Nodeset { nodes: vec![node] };
+
+			for (i, step) in self.steps.iter_mut().enumerate() {
+				nodes = step.evaluate(eval, nodes)?;
+				if DEBUG { println!("Step [{i}] {nodes:?}"); }
+			}
+
+			if DEBUG {
+				println!("<- {nodes:?}");
+
+				println!("==========================================================");
+			}
+
+			// Reverse it so we can use .pop later.
+			nodes.nodes.reverse();
+
+			self.found_cache = Some(nodes.nodes);
 		}
 
-		println!("{:?}", node);
+		let nodes = self.found_cache.as_mut().unwrap();
 
-		if node.is_empty() {
-			Ok(None)
-		} else {
-			Ok(Some(Value::Node(node.nodes.remove(0))))
-		}
+		Ok(nodes.pop().map(Value::Node))
 	}
 }
 
@@ -433,7 +453,7 @@ impl Step {
 	}
 
 	fn evaluate(
-		&self,
+		&mut self,
 		context: &Evaluation,
 		starting_nodes: Nodeset,
 	) -> Result<Nodeset> {
@@ -443,7 +463,7 @@ impl Step {
 			let child_context = context.new_evaluation_from(&node);
 			let mut nodes = child_context.find_nodes(&self.axis, self.node_test.as_ref());
 
-			for predicate in &self.predicates {
+			for predicate in &mut self.predicates {
 				nodes = predicate.select(context, nodes)?;
 			}
 
@@ -466,14 +486,20 @@ struct Predicate(ExpressionArg);
 
 impl Predicate {
 	fn select(
-		&self,
+		&mut self,
 		context: &Evaluation<'_>,
 		nodes: Nodeset,
 	) -> Result<Nodeset> {
+		let node_count = nodes.len();
+
 		let found = nodes
 			.into_iter()
-			.filter_map(|node| {
-				let ctx = context.new_evaluation_from(&node);
+			.enumerate()
+			.filter_map(|(index, node)| {
+				let mut ctx = context.new_evaluation_from(&node);
+				// TODO: Better Manage.
+				ctx.position = index + 1;
+				ctx.size = node_count;
 
 				match self.matches_eval(&ctx) {
 					Ok(Some(true)) => Some(Ok(node)),
@@ -486,7 +512,7 @@ impl Predicate {
 		Ok(found.into())
 	}
 
-	fn matches_eval(&self, eval: &Evaluation<'_>) -> Result<Option<bool>> {
+	fn matches_eval(&mut self, eval: &Evaluation<'_>) -> Result<Option<bool>> {
 		let Some(value) = self.0.next_eval(eval)? else {
 			return Ok(None);
 		};
@@ -511,8 +537,8 @@ impl Function {
 }
 
 impl Expression for Function {
-	fn next_eval(&self, eval: &Evaluation) -> Result<Option<Value>> {
-		self.0.exec(eval, Args::new(self.1.as_ref())).map(Some)
+	fn next_eval(&mut self, eval: &Evaluation) -> Result<Option<Value>> {
+		self.0.exec(eval, Args::new(self.1.as_mut())).map(Some)
 
 		// TODO: Can't get type_name of dyn Functions' struct.
 		// match self.0.exec(eval, Args::new(self.1.as_mut())) {

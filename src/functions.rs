@@ -11,30 +11,30 @@ pub trait Function: fmt::Debug {
 }
 
 
-pub struct Args<'a>(&'a [Box<dyn Expression>]);
+pub struct Args<'a>(&'a mut [Box<dyn Expression>]);
 
 impl<'a> Args<'a> {
-	pub fn new(args: &'a [Box<dyn Expression>]) -> Self {
+	pub fn new(args: &'a mut [Box<dyn Expression>]) -> Self {
 		Self(args)
 	}
 
-	pub fn get_required(&self, index: usize) -> Result<&dyn Expression> {
+	pub fn get_required(&mut self, index: usize) -> Result<&mut Box<dyn Expression>> {
 		self.get_optional(index).ok_or(Error::MissingFuncArgument)
 	}
 
-	pub fn get_required_value(&self, index: usize, eval: &Evaluation) -> Result<Value> {
+	pub fn get_required_value(&mut self, index: usize, eval: &Evaluation) -> Result<Value> {
 		self.get_required(index)?.next_eval(eval)?.ok_or(Error::UnableToFindValue)
 	}
 
-	pub fn get_required_optional_value(&self, index: usize, eval: &Evaluation) -> Result<Option<Value>> {
+	pub fn get_required_optional_value(&mut self, index: usize, eval: &Evaluation) -> Result<Option<Value>> {
 		self.get_required(index)?.next_eval(eval)
 	}
 
-	pub fn get_optional(&self, index: usize) -> Option<&dyn Expression> {
-		self.0.get(index).map(|v| &**v)
+	pub fn get_optional(&mut self, index: usize) -> Option<&mut Box<dyn Expression>> {
+		self.0.get_mut(index)
 	}
 
-	pub fn as_array(&self) -> &[Box<dyn Expression>] {
+	pub fn as_array(&mut self) -> &mut [Box<dyn Expression>] {
 		self.0
 	}
 }
@@ -68,7 +68,7 @@ impl Function for Position {
 pub struct Count;
 
 impl Function for Count {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		let arg1 = args.get_required(0)?;
 
 		let mut count = 0.0;
@@ -88,7 +88,7 @@ impl Function for Count {
 pub struct LocalName;
 
 impl Function for LocalName {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		if let Some(expr) = args.get_optional(0) {
 			if let Some(node) = expr.next_eval(eval)? {
 				let node = node.into_node()?;
@@ -109,7 +109,7 @@ impl Function for LocalName {
 pub struct NamespaceUri;
 
 impl Function for NamespaceUri {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		if let Some(expr) = args.get_optional(0) {
 			if let Some(node) = expr.next_eval(eval)? {
 				let node = node.into_node()?;
@@ -128,7 +128,7 @@ impl Function for NamespaceUri {
 pub struct Name;
 
 impl Function for Name {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		if let Some(expr) = args.get_optional(0) {
 			if let Some(node) = expr.next_eval(eval)? {
 				let node = node.into_node()?;
@@ -161,7 +161,7 @@ impl Function for Name {
 pub struct ToString;
 
 impl Function for ToString {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		let value = match args.get_required_value(0, eval)? {
 			Value::Boolean(val) => val.to_string(),
 			Value::Number(val) => val.to_string(),
@@ -178,7 +178,7 @@ impl Function for ToString {
 pub struct Concat;
 
 impl Function for Concat {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		let mut concat_value = String::new();
 
 		for expr in args.as_array() {
@@ -199,7 +199,7 @@ impl Function for Concat {
 pub struct StartsWith;
 
 impl Function for StartsWith {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		// Required since if the required value does not contain wanted result it will error with UnableToFindValue. We don't want an error. We want a Boolean(false).
 		let (left, right) = match (args.get_required_optional_value(0, eval)?, args.get_required_optional_value(1, eval)?) {
 			(Some(a), Some(b)) => (a, b),
@@ -220,7 +220,7 @@ impl Function for StartsWith {
 pub struct Contains;
 
 impl Function for Contains {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		// Required since if the required value does not contain wanted result it will error with UnableToFindValue. We don't want an error. We want a Boolean(false).
 		let (left, right) = match (args.get_required_optional_value(0, eval)?, args.get_required_optional_value(1, eval)?) {
 			(Some(a), Some(b)) => (a, b),
@@ -249,7 +249,7 @@ pub struct SubstringBefore;
 
 
 impl Function for SubstringBefore {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		let left = args.get_required_value(0, eval)?;
 		let right = args.get_required_value(1, eval)?;
 
@@ -271,7 +271,7 @@ impl Function for SubstringBefore {
 pub struct SubstringAfter;
 
 impl Function for SubstringAfter {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		let left = args.get_required_value(0, eval)?;
 		let right = args.get_required_value(1, eval)?;
 
@@ -293,7 +293,7 @@ impl Function for SubstringAfter {
 pub struct Substring;
 
 impl Function for Substring {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		let value_0 = args.get_required_value(0, eval)?;
 		let value_1 = args.get_required_value(1, eval)?;
 
@@ -318,7 +318,7 @@ impl Function for Substring {
 pub struct StringLength;
 
 impl Function for StringLength {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		if let Some(arg) = args.get_optional(0) {
 			let value = arg.next_eval(eval)?.ok_or(Error::UnableToFindValue)?;
 
@@ -336,7 +336,7 @@ impl Function for StringLength {
 pub struct NormalizeSpace;
 
 impl Function for NormalizeSpace {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		match args.get_optional(0) {
 			Some(expr) => {
 				let value = expr.next_eval(eval)?.ok_or(Error::UnableToFindValue)?;
@@ -379,7 +379,7 @@ impl Function for NormalizeSpace {
 pub struct Not;
 
 impl Function for Not {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		let found = args.get_required_value(0, eval)?;
 		Ok(Value::Boolean(!found.boolean()?))
 	}
@@ -417,7 +417,7 @@ impl Function for False {
 pub struct Sum;
 
 impl Function for Sum {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		let values = args.get_required(0)?.collect(eval)?;
 
 		let orig_len = values.len();
@@ -444,7 +444,7 @@ impl Function for Sum {
 pub struct Floor;
 
 impl Function for Floor {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		let val = args.get_required_value(0, eval)?;
 
 		let val = val.number()?;
@@ -458,7 +458,7 @@ impl Function for Floor {
 pub struct Ceiling;
 
 impl Function for Ceiling {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		let val = args.get_required_value(0, eval)?;
 
 		let val = val.number()?;
@@ -472,7 +472,7 @@ impl Function for Ceiling {
 pub struct Round;
 
 impl Function for Round {
-	fn exec<'a>(&self, eval: &Evaluation, args: Args<'a>) -> Result<Value> {
+	fn exec<'a>(&self, eval: &Evaluation, mut args: Args<'a>) -> Result<Value> {
 		let val = args.get_required_value(0, eval)?;
 
 		let val = val.number()?;

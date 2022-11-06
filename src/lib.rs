@@ -32,6 +32,50 @@ pub fn parse_document<R: std::io::Read>(data: &mut R) -> Result<Document> {
 }
 
 
+pub fn compile_lines(node: &Node) -> String {
+	let mut items = Vec::new();
+
+	if node.is_text() {
+		items.push(format!("{:?}", node_name(node)));
+	} else {
+		items.push(node_name(node));
+	}
+
+	fn iter_through(parent: Option<Node>, items: &mut Vec<String>) {
+		if let Some(item) = parent {
+			let node_parent = item.parent();
+
+			if node_parent.is_some() {
+				items.push(node_name(&item));
+			} else {
+				items.push(String::from("ROOT"));
+			}
+
+			iter_through(node_parent, items);
+		}
+	}
+
+	iter_through(node.parent(), &mut items);
+
+	items.reverse();
+
+	items.join("/")
+}
+
+fn node_name(node: &Node) -> String {
+	if let Some(mut name) = node.as_simple_html() {
+		let found = name.find(|c| c == '>');
+
+		if let Some(found) = found {
+			name.truncate(found + 1);
+		}
+
+		name
+	} else {
+		String::from("ROOT")
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	#![allow(dead_code)]
