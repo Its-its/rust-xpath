@@ -137,13 +137,13 @@ impl Tokenizer {
         rem_path: &str,
         identities: &[Id<T>],
     ) -> ParseResult {
-        for (name, id) in identities {
-            if rem_path.len() < name.len() {
+        for (ident_name, id) in identities {
+            if rem_path.len() < ident_name.len() {
                 continue;
             }
 
-            if &rem_path[0..name.len()] == *name {
-                return Some((name.len(), id.clone().into()));
+            if rem_path.starts_with(ident_name) {
+                return Some((ident_name.len(), id.clone().into()));
             }
         }
 
